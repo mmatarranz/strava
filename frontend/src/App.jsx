@@ -110,7 +110,7 @@ function App() {
   return (
     <>
       {/* Top bar */}
-      <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="top-bar">
         <div>
           <h1 className="text-3xl text-gradient">Dashboard de Rendimiento</h1>
           <p className="text-muted">Seguimiento personalizado de tus actividades en Strava</p>
