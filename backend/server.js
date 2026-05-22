@@ -543,12 +543,12 @@ app.get('/api/fitness', async (req, res) => {
             loadByDay[dateStr] = (loadByDay[dateStr] || 0) + load;
         });
 
-        // Generar array de los últimos 90 días
+        // Generar array de los últimos 180 días
         const days = [];
         let ctl = 0, atl = 0;
         const ctlDecay = Math.exp(-1/42), atlDecay = Math.exp(-1/7);
 
-        for (let i = 89; i >= 0; i--) {
+        for (let i = 179; i >= 0; i--) {
             const d = new Date(); d.setDate(d.getDate() - i);
             const dateStr = d.toISOString().split('T')[0];
             const load = loadByDay[dateStr] || 0;
