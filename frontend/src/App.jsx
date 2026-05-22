@@ -14,7 +14,7 @@ import AnnualGoalProgress from './components/AnnualGoalProgress';
 import HistoricalStats from './components/HistoricalStats';
 import './index.css';
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
 
 async function apiFetch(path) {
   console.log(`[API] Fetching ${path}...`);

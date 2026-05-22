@@ -78,7 +78,7 @@ app.get('/api/auth/callback', async (req, res) => {
             params: { client_id: process.env.STRAVA_CLIENT_ID, client_secret: process.env.STRAVA_CLIENT_SECRET, code, grant_type: 'authorization_code' }
         });
         saveTokens({ access_token: response.data.access_token, refresh_token: response.data.refresh_token, expires_at: response.data.expires_at });
-        res.redirect('http://localhost:5173');
+        res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
     } catch (error) {
         res.status(500).send('Error durante la autenticación con Strava');
     }
@@ -747,5 +747,20 @@ app.get('/api/recovery', async (req, res) => {
         else res.status(500).json({ error: 'Error obteniendo recuperación' });
     }
 });
+
+// Servir archivos estáticos del frontend en producción
+const frontendDistPath = path.join(__dirname, '../frontend/dist');
+if (fs.existsSync(frontendDistPath)) {
+    console.log(`Serving static files from ${frontendDistPath}`);
+    app.use(express.static(frontendDistPath));
+    app.get(/.*/, (req, res, next) => {
+        if (req.path.startsWith('/api')) {
+            return next();
+        }
+        res.sendFile(path.join(frontendDistPath, 'index.html'));
+    });
+} else {
+    console.log('Static frontend directory not found. Running in API-only mode.');
+}
 
 app.listen(PORT, () => console.log(`Backend server running on http://localhost:${PORT}`));
