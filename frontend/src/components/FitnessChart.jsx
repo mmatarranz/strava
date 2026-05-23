@@ -6,8 +6,8 @@ import {
 import { Zap, Calendar, TrendingUp } from 'lucide-react';
 
 const FitnessChart = ({ data }) => {
-  const chartDays = data?.days || [];
-  const withingsConnected = data?.withingsConnected || false;
+  const chartDays = Array.isArray(data) ? data : (data?.days || []);
+  const withingsConnected = Array.isArray(data) ? false : (data?.withingsConnected || false);
 
   if (!chartDays || chartDays.length === 0) return null;
 

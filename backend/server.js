@@ -827,7 +827,7 @@ app.get('/api/fitness', async (req, res) => {
                 hasPhysio: !!sleepInfo
             });
         }
-        res.json({ days, withingsConnected });
+        res.json(days);
     } catch (error) {
         if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') res.status(401).json({ error: 'No autenticado' });
         else { console.error(error.message); res.status(500).json({ error: 'Error calculando fitness' }); }
