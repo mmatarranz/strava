@@ -3,7 +3,7 @@ import { Droplet, Scale, ActivitySquare, TrendingDown, TrendingUp, Moon, Heart }
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 
 const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
-  if (!healthData) return <div className="dashboard-sidebar">Cargando biometría...</div>;
+  if (!healthData || healthData.error) return <div className="dashboard-sidebar">Cargando biometría...</div>;
 
   const { weight, bodyFat, hydration, withingsConnected } = healthData;
 

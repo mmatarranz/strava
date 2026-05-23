@@ -13,7 +13,7 @@ const ZONE_DESC = {
 };
 
 const RecoveryPanel = ({ data }) => {
-  if (!data) return null;
+  if (!data || data.error) return null;
 
   const { activeDays, restDays, streak, zones, hasHrData, last28, sleepData, rhrData, recoveryScore, withingsConnected } = data;
 
