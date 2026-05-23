@@ -15,80 +15,93 @@ const ZONE_DESC = {
 const RecoveryPanel = ({ data }) => {
   if (!data) return null;
 
-  const { activeDays, restDays, streak, zones, hasHrData, last28 } = data;
+  const { activeDays, restDays, streak, zones, hasHrData, last28, sleepData, rhrData, recoveryScore, withingsConnected } = data;
 
   const streakColor = streak > 6 ? '#ef4444' : streak > 4 ? '#f59e0b' : '#10b981';
 
-  // Semáforo de recuperación
-  const status = restDays < 4
-    ? { label: '⚠️ Descansa más', color: '#ef4444', hint: 'Menos de 4 días de descanso en 4 semanas. Riesgo de sobreentrenamiento.' }
-    : restDays > 18
-    ? { label: '😴 Más actividad', color: '#06b6d4', hint: 'Más de 18 días de descanso. Podrías aumentar la carga gradualmente.' }
-    : { label: '✅ Balance correcto', color: '#10b981', hint: 'Buen equilibrio entre carga y recuperación.' };
+  // Obtener estado basado en score científico
+  const getRecoveryStatus = (score) => {
+    if (score >= 80) return { label: '🟢 Óptima', desc: '¡Listo para entrenar! Cuerpo completamente recuperado.', color: '#10b981' };
+    if (score >= 50) return { label: '🟡 Moderada', desc: 'Recuperación parcial. Se recomienda sesión suave o Z2.', color: '#f59e0b' };
+    return { label: '🔴 Baja', desc: 'Fatiga elevada. Considera un día de descanso absoluto o estiramientos.', color: '#ef4444' };
+  };
+
+  const status = getRecoveryStatus(recoveryScore);
 
   return (
     <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div>
-        <h2 className="text-xl">Recuperación y Descanso</h2>
-        <p className="text-muted text-xs">Análisis de las últimas 4 semanas</p>
+      
+      {/* HEADER */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 className="text-xl">Recuperación y Descanso</h2>
+          <p className="text-muted text-xs">Análisis cruzado Strava × Withings</p>
+        </div>
+        {withingsConnected && <span style={{ fontSize: '0.65rem', background: 'rgba(6,182,212,0.15)', color: 'var(--health-cyan)', padding: '3px 8px', borderRadius: '6px', fontWeight: 600 }}>Biometría Activa</span>}
       </div>
 
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+      {/* 🧪 CÍRCULO / DIAL DE RECUPERACIÓN CIENTÍFICA */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '14px', padding: '1rem', border: '1px solid rgba(255,255,255,0.04)' }}>
+        
+        {/* Marcador Numérico */}
+        <div style={{
+          position: 'relative', width: '75px', height: '75px', borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: `0 0 16px ${status.color}1b`,
+          border: `3.5px solid ${status.color}33`,
+          background: 'rgba(15,23,42,0.6)'
+        }}>
+          <span style={{ fontSize: '1.65rem', fontWeight: 800, color: status.color }}>
+            {recoveryScore}<span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>%</span>
+          </span>
+        </div>
+
+        {/* Mensaje de Estado */}
+        <div style={{ flex: 1 }}>
+          <p style={{ fontWeight: 700, color: status.color, fontSize: '0.95rem', marginBottom: '3px' }}>{status.label}</p>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: '1.25' }}>{status.desc}</p>
+        </div>
+      </div>
+
+      {/* KPIs DE RECUPERACIÓN */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
         {[
-          { label: 'Días activos', value: activeDays, color: 'var(--strava-orange)', unit: '/28' },
-          { label: 'Días descanso', value: restDays, color: 'var(--health-cyan)', unit: '/28' },
-          { label: 'Racha actual', value: streak, color: streakColor, unit: 'd' },
+          { label: 'Sueño (Withings)', value: `${sleepData?.currentScore || 78}`, color: 'var(--health-cyan)', unit: '%' },
+          { label: 'RHR Reposo', value: `${rhrData?.current || 55}`, color: 'var(--chart-indoor)', unit: 'ppm' },
+          { label: 'Racha Activa', value: streak, color: streakColor, unit: 'd' },
         ].map(({ label, value, color, unit }) => (
           <div key={label} style={{
             background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
-            padding: '0.75rem 0.5rem', textAlign: 'center', border: `1px solid ${color}33`
+            padding: '0.65rem 0.4rem', textAlign: 'center', border: `1px solid ${color}22`
           }}>
-            <p style={{ fontSize: '1.5rem', fontWeight: 700, color }}>
-              {value}<span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{unit}</span>
+            <p style={{ fontSize: '1.35rem', fontWeight: 800, color }}>
+              {value}<span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{unit}</span>
             </p>
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{label}</p>
+            <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.1' }}>{label}</p>
           </div>
         ))}
       </div>
 
-      {/* Estado de recuperación */}
-      <div style={{
-        background: `${status.color}18`, border: `1px solid ${status.color}44`,
-        borderRadius: '8px', padding: '0.7rem 1rem'
-      }}>
-        <p style={{ fontWeight: 600, color: status.color, fontSize: '0.85rem', marginBottom: '2px' }}>{status.label}</p>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{status.hint}</p>
-      </div>
-
-      {/* Mini-calendario de los últimos 28 días */}
+      {/* MINI-CALENDARIO DE LOS ÚLTIMOS 28 DÍAS */}
       <div>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Últimos 28 días</p>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Días de entrenamiento (28d)</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
           {last28.map(({ date, label, active }) => (
             <div key={date} title={date} style={{
               aspectRatio: '1', borderRadius: '5px', display: 'flex', alignItems: 'center',
               justifyContent: 'center', fontSize: '0.65rem', fontWeight: 500,
-              background: active ? 'rgba(252,76,2,0.7)' : 'rgba(255,255,255,0.05)',
+              background: active ? 'rgba(252,76,2,0.7)' : 'rgba(255,255,255,0.04)',
               color: active ? 'white' : 'var(--text-secondary)',
-              border: active ? '1px solid rgba(252,76,2,0.3)' : '1px solid rgba(255,255,255,0.06)',
+              border: active ? '1px solid rgba(252,76,2,0.3)' : '1px solid rgba(255,255,255,0.05)',
             }}>{label}</div>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'rgba(252,76,2,0.7)' }} /> Entreno
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-            <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'rgba(255,255,255,0.05)' }} /> Descanso
-          </div>
-        </div>
       </div>
 
-      {/* Zonas de FC */}
+      {/* DISTRIBUCIÓN DE FRECUENCIA CARDÍACA (Strava) */}
       {hasHrData && (
         <div>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
             Distribución de Frecuencia Cardíaca
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -98,11 +111,11 @@ const RecoveryPanel = ({ data }) => {
                   <span style={{ fontSize: '0.72rem', color: ZONE_COLORS[z] }}>{ZONE_LABELS[z]}</span>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{ZONE_DESC[z]} · {pct}%</span>
                 </div>
-                <div style={{ height: '6px', background: 'rgba(255,255,255,0.07)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ height: '5px', background: 'rgba(255,255,255,0.07)', borderRadius: '3px', overflow: 'hidden' }}>
                   <div style={{
                     height: '100%', width: `${pct}%`, borderRadius: '3px',
                     background: ZONE_COLORS[z], transition: 'width 0.8s ease',
-                    boxShadow: `0 0 6px ${ZONE_COLORS[z]}88`
+                    boxShadow: `0 0 6px ${ZONE_COLORS[z]}66`
                   }} />
                 </div>
               </div>

@@ -62,6 +62,52 @@ async function getValidAccessToken() {
     return tokens.access_token;
 }
 
+const WITHINGS_TOKENS_FILE = path.join(__dirname, 'withings_tokens.json');
+
+function getWithingsTokens() {
+    if (fs.existsSync(WITHINGS_TOKENS_FILE)) return JSON.parse(fs.readFileSync(WITHINGS_TOKENS_FILE, 'utf8'));
+    return null;
+}
+function saveWithingsTokens(tokens) {
+    fs.writeFileSync(WITHINGS_TOKENS_FILE, JSON.stringify(tokens, null, 2));
+}
+async function getWithingsValidAccessToken() {
+    let tokens = getWithingsTokens();
+    if (!tokens || !tokens.refresh_token) throw new Error('NO_WITHINGS_TOKEN');
+    const now = Math.floor(Date.now() / 1000);
+    if (now >= tokens.expires_at - 300) {
+        try {
+            console.log("[Withings] Refreshing access token...");
+            const response = await axios.post('https://wbsapi.withings.net/v2/oauth2', 
+                new URLSearchParams({
+                    action: 'requesttoken',
+                    grant_type: 'refresh_token',
+                    client_id: process.env.WITHINGS_CLIENT_ID,
+                    client_secret: process.env.WITHINGS_CLIENT_SECRET,
+                    refresh_token: tokens.refresh_token
+                }).toString(),
+                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+            );
+            if (response.data && response.data.status === 0 && response.data.body) {
+                const body = response.data.body;
+                tokens = {
+                    access_token: body.access_token,
+                    refresh_token: body.refresh_token,
+                    expires_at: Math.floor(Date.now() / 1000) + body.expires_in,
+                    userid: body.userid
+                };
+                saveWithingsTokens(tokens);
+            } else {
+                throw new Error(response.data?.error || 'WITHINGS_REFRESH_API_ERROR');
+            }
+        } catch (error) {
+            console.error("[Withings] Error refreshing token:", error.response?.data || error.message);
+            throw new Error('WITHINGS_TOKEN_REFRESH_FAILED');
+        }
+    }
+    return tokens.access_token;
+}
+
 // ---------------------------
 // AUTENTICACIÓN
 // ---------------------------
@@ -86,6 +132,64 @@ app.get('/api/auth/callback', async (req, res) => {
 app.get('/api/auth/status', async (req, res) => {
     try { await getValidAccessToken(); res.json({ authenticated: true }); }
     catch (e) { res.json({ authenticated: false }); }
+});
+
+// ---------------------------
+// AUTENTICACIÓN WITHINGS
+// ---------------------------
+app.get('/api/withings/auth/login', (req, res) => {
+    if (!process.env.WITHINGS_CLIENT_ID) {
+        return res.status(400).send("Withings API no está configurada en este servidor. Por favor, define WITHINGS_CLIENT_ID en el archivo .env.");
+    }
+    const state = Math.random().toString(36).substring(2, 15);
+    const scope = 'user.metrics,user.activity';
+    const authUrl = `https://account.withings.com/oauth2_user/authorize2?response_type=code&client_id=${process.env.WITHINGS_CLIENT_ID}&state=${state}&scope=${scope}&redirect_uri=${process.env.WITHINGS_REDIRECT_URI}`;
+    res.redirect(authUrl);
+});
+
+app.get('/api/withings/auth/callback', async (req, res) => {
+    const { code } = req.query;
+    if (!code) return res.status(400).send('No se proporcionó código de Withings');
+    try {
+        console.log("[Withings] Requesting token with authorization code...");
+        const response = await axios.post('https://wbsapi.withings.net/v2/oauth2', 
+            new URLSearchParams({
+                action: 'requesttoken',
+                grant_type: 'authorization_code',
+                client_id: process.env.WITHINGS_CLIENT_ID,
+                client_secret: process.env.WITHINGS_CLIENT_SECRET,
+                code,
+                redirect_uri: process.env.WITHINGS_REDIRECT_URI
+            }).toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+
+        if (response.data && response.data.status === 0 && response.data.body) {
+            const body = response.data.body;
+            saveWithingsTokens({
+                access_token: body.access_token,
+                refresh_token: body.refresh_token,
+                expires_at: Math.floor(Date.now() / 1000) + body.expires_in,
+                userid: body.userid
+            });
+            res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
+        } else {
+            console.error("[Withings] Auth API failed:", response.data);
+            res.status(500).send('Error de Withings API: ' + (response.data?.error || 'status no cero'));
+        }
+    } catch (error) {
+        console.error("[Withings] Error during authentication callback:", error.response?.data || error.message);
+        res.status(500).send('Error durante la autenticación con Withings');
+    }
+});
+
+app.get('/api/withings/auth/status', async (req, res) => {
+    try {
+        await getWithingsValidAccessToken();
+        res.json({ authenticated: true });
+    } catch (e) {
+        res.json({ authenticated: false });
+    }
 });
 
 // ---------------------------
@@ -509,12 +613,74 @@ app.get('/api/stats', async (req, res) => {
 // ---------------------------
 // ENDPOINT: SALUD (mock)
 // ---------------------------
-app.get('/api/health', (req, res) => {
-    res.json({
-        weight:    { current: 75.2, goal: 74.0, previous: 76.0, history: [76, 75.8, 75.5, 75.4, 75.2] },
-        bodyFat:   { current: 15.5, goal: 14.0, previous: 16.0 },
-        hydration: { dailyGoal: 3.0, currentLiters: 2.2, previousLiters: 1.8, history: [2.0, 2.5, 1.8, 3.1, 2.2] }
-    });
+app.get('/api/health', async (req, res) => {
+    const defaultHydration = { dailyGoal: 3.0, currentLiters: 2.2, previousLiters: 1.8, history: [2.0, 2.5, 1.8, 3.1, 2.2] };
+    
+    try {
+        const withingsToken = await getWithingsValidAccessToken();
+        console.log("[Withings] Fetching weight/body fat biometrics from API...");
+        const response = await axios.post('https://wbsapi.withings.net/measure', 
+            new URLSearchParams({ action: 'getmeas' }).toString(),
+            {
+                headers: {
+                    'Authorization': `Bearer ${withingsToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
+        
+        if (response.data && response.data.status === 0 && response.data.body && response.data.body.measuregrps) {
+            const grps = response.data.body.measuregrps;
+            const weights = [];
+            const fats = [];
+            
+            grps.forEach(grp => {
+                grp.measures.forEach(m => {
+                    const realValue = m.value * Math.pow(10, m.unit);
+                    if (m.type === 1) {
+                        weights.push(parseFloat(realValue.toFixed(1)));
+                    } else if (m.type === 6) {
+                        fats.push(parseFloat(realValue.toFixed(1)));
+                    }
+                });
+            });
+            
+            const currentWeight = weights[0] || 75.2;
+            const prevWeight = weights[1] || 76.0;
+            const weightHistory = weights.slice(0, 10).reverse();
+            if (weightHistory.length === 0) weightHistory.push(76, 75.8, 75.5, 75.4, 75.2);
+            
+            const currentFat = fats[0] || 15.5;
+            const prevFat = fats[1] || 16.0;
+            
+            res.json({
+                weight: {
+                    current: currentWeight,
+                    goal: 74.0,
+                    previous: prevWeight,
+                    history: weightHistory
+                },
+                bodyFat: {
+                    current: currentFat,
+                    goal: 14.0,
+                    previous: prevFat
+                },
+                hydration: defaultHydration,
+                withingsConnected: true
+            });
+        } else {
+            console.warn("[Withings] API status no cero o body vacío:", response.data);
+            throw new Error('WITHINGS_API_BAD_STATUS');
+        }
+    } catch (e) {
+        console.log(`[Health] Usando datos simulados (Withings no conectado/error: ${e.message})`);
+        res.json({
+            weight:    { current: 75.2, goal: 74.0, previous: 76.0, history: [76, 75.8, 75.5, 75.4, 75.2] },
+            bodyFat:   { current: 15.5, goal: 14.0, previous: 16.0 },
+            hydration: defaultHydration,
+            withingsConnected: false
+        });
+    }
 });
 
 // ---------------------------
@@ -738,9 +904,134 @@ app.get('/api/recovery', async (req, res) => {
             return { date: key, label: d.getDate(), active: activeDays.has(key) };
         });
 
+        // ----------------------------------------
+        // INTEGRACIÓN BIOMÉTRICA DE WITHINGS (SUEÑO / FCR)
+        // ----------------------------------------
+        let sleepData = null;
+        let rhrData = null;
+        let withingsConnected = false;
+
+        try {
+            const withingsToken = await getWithingsValidAccessToken();
+            console.log("[Withings] Fetching sleep summary data...");
+            const today = new Date();
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(today.getDate() - 7);
+            
+            const startdateymd = sevenDaysAgo.toISOString().split('T')[0];
+            const enddateymd = today.toISOString().split('T')[0];
+
+            const sleepResponse = await axios.post('https://wbsapi.withings.net/v2/sleep', 
+                new URLSearchParams({
+                    action: 'getsummary',
+                    startdateymd,
+                    enddateymd
+                }).toString(),
+                {
+                    headers: {
+                        'Authorization': `Bearer ${withingsToken}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                }
+            );
+
+            if (sleepResponse.data && sleepResponse.data.status === 0 && sleepResponse.data.body && sleepResponse.data.body.series) {
+                const series = sleepResponse.data.body.series;
+                const sleepHoursHistory = series.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
+                const rhrHistory = series.map(s => s.data.hr_average).filter(hr => hr > 0);
+                
+                const avgSleep = sleepHoursHistory.length > 0 
+                    ? parseFloat((sleepHoursHistory.reduce((a, b) => a + b, 0) / sleepHoursHistory.length).toFixed(1)) 
+                    : 7.2;
+                
+                const avgRhr = rhrHistory.length > 0 
+                    ? Math.round(rhrHistory.reduce((a, b) => a + b, 0) / rhrHistory.length) 
+                    : 56;
+                
+                const currentSleepScore = series[0] && series[0].data.sleep_score ? series[0].data.sleep_score : 75;
+
+                sleepData = {
+                    history: sleepHoursHistory.slice(0, 7).reverse(),
+                    average: avgSleep,
+                    currentScore: currentSleepScore
+                };
+                
+                rhrData = {
+                    history: rhrHistory.slice(0, 7).reverse(),
+                    average: avgRhr,
+                    current: rhrHistory[0] || 55
+                };
+                
+                withingsConnected = true;
+            }
+        } catch (e) {
+            console.log(`[Recovery] Withings sleep data not available or failed: ${e.message}`);
+        }
+
+        // Fallback robusto con datos simulados si Withings no está vinculado
+        if (!sleepData) {
+            sleepData = {
+                history: [7.5, 6.8, 8.2, 7.0, 6.5, 7.8, 7.2],
+                average: 7.3,
+                currentScore: 78
+            };
+        }
+        if (!rhrData) {
+            rhrData = {
+                history: [56, 54, 57, 55, 54, 56, 55],
+                average: 55,
+                current: 55
+            };
+        }
+
+        // Calcular TSB actual para la puntuación de recuperación cruzada
+        const loadByDay = {};
+        allYearActs.forEach(act => {
+            const dateStr = new Date(act.start_date).toISOString().split('T')[0];
+            let load = act.suffer_score || 0;
+            if (!load && act.moving_time) {
+                const hrFactor = act.has_heartrate ? (act.average_heartrate / 150) : 0.7;
+                load = Math.round((act.moving_time / 60) * hrFactor * 0.5);
+            }
+            loadByDay[dateStr] = (loadByDay[dateStr] || 0) + load;
+        });
+        
+        let ctl = 0, atl = 0;
+        const ctlDecay = Math.exp(-1/42), atlDecay = Math.exp(-1/7);
+        for (let i = 42; i >= 0; i--) {
+            const d = new Date(); d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            const load = loadByDay[dateStr] || 0;
+            ctl = ctl * ctlDecay + load * (1 - ctlDecay);
+            atl = atl * atlDecay + load * (1 - atlDecay);
+        }
+        const currentTsb = ctl - atl;
+
+        // Fórmulas de puntuaciones parciales
+        const rhrDiff = rhrData.current - rhrData.average;
+        let rhrScore = 100;
+        if (rhrDiff > 0) {
+            rhrScore = Math.max(100 - rhrDiff * 8, 40); // penalización de 8 puntos por pulsación por encima de la media
+        }
+
+        let tsbScore = 100;
+        if (currentTsb < -30) {
+            tsbScore = 40;
+        } else if (currentTsb < 0) {
+            tsbScore = Math.round(100 + (currentTsb * 2));
+        }
+
+        // Puntuación de recuperación científica ponderada
+        const recoveryScore = Math.round(
+            (sleepData.currentScore * 0.40) +
+            (rhrScore * 0.30) +
+            (tsbScore * 0.30)
+        );
+
         res.json({
             activeDays: activeDays.size, restDays, streak,
-            zones: zonePcts, hasHrData: hrActs.length > 0, last28
+            zones: zonePcts, hasHrData: hrActs.length > 0, last28,
+            sleepData, rhrData, recoveryScore, withingsConnected
         });
     } catch (error) {
         if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') res.status(401).json({ error: 'No autenticado' });

@@ -37,6 +37,7 @@ function App() {
   const [historyData,   setHistoryData]   = useState(null);
   const [loading,       setLoading]       = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isWithingsAuthenticated, setIsWithingsAuthenticated] = useState(false);
   const [errorMsg,      setErrorMsg]      = useState(null);
 
   const fetchAll = async () => {
@@ -46,7 +47,8 @@ function App() {
       setIsAuthenticated(true);
 
       // Lanzar todas las peticiones en paralelo
-      const [acts, health, statsRes, fitness, goals, perf, recovery, annual, history] = await Promise.all([
+      const [withingsStatus, acts, health, statsRes, fitness, goals, perf, recovery, annual, history] = await Promise.all([
+        apiFetch('/withings/auth/status'),
         apiFetch('/activities'),
         apiFetch('/health'),
         apiFetch('/stats'),
@@ -58,6 +60,7 @@ function App() {
         apiFetch('/history'),
       ]);
 
+      setIsWithingsAuthenticated(withingsStatus.authenticated);
       setActivities(acts);
       setHealthData(health);
       setStats(statsRes);
@@ -115,9 +118,25 @@ function App() {
           <h1 className="text-3xl text-gradient">Dashboard de Rendimiento</h1>
           <p className="text-muted">Seguimiento personalizado de tus actividades en Strava</p>
         </div>
-        <div style={{ color: 'var(--health-green)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--health-green)', boxShadow: '0 0 6px var(--health-green)' }}></div>
-          Conectado a Strava
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ color: 'var(--health-green)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--health-green)', boxShadow: '0 0 6px var(--health-green)' }}></div>
+            Conectado a Strava
+          </div>
+          {isWithingsAuthenticated ? (
+            <div style={{ color: 'var(--health-cyan)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--health-cyan)', boxShadow: '0 0 6px var(--health-cyan)' }}></div>
+              Conectado a Withings
+            </div>
+          ) : (
+            <a href={`${API_URL}/withings/auth/login`} style={{
+              textDecoration: 'none', color: 'white', background: 'rgba(255, 255, 255, 0.08)', fontSize: '0.72rem', fontWeight: '500',
+              padding: '0.35rem 0.7rem', cursor: 'pointer', borderRadius: '8px', border: '1px solid var(--glass-border)', display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+              transition: 'background 0.2s ease'
+            }} onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.15)'} onMouseOut={(e) => e.target.style.background = 'rgba(255,255,255,0.08)'}>
+              🔌 Conectar Withings
+            </a>
+          )}
         </div>
       </div>
 
@@ -167,7 +186,7 @@ function App() {
             <RecoveryPanel data={recoveryData} />
 
             {/* Salud */}
-            <HealthSidebar healthData={healthData} />
+            <HealthSidebar healthData={healthData} sleepData={recoveryData?.sleepData} rhrData={recoveryData?.rhrData} />
           </div>
         </div>
       )}
