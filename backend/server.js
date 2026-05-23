@@ -696,16 +696,95 @@ app.get('/api/fitness', async (req, res) => {
         // Unificado: 8 páginas desde el 1 de enero
         const allActivities = await fetchAllActivities(token, 8, afterTimestamp);
 
+        // ----------------------------------------
+        // CONSULTA DE SUEÑO Y PESO DE WITHINGS (180 DÍAS)
+        // ----------------------------------------
+        const sleepMap = {};
+        const weightMap = {};
+        let averageRhr = 55;
+        let withingsConnected = false;
+
+        try {
+            const withingsToken = await getWithingsValidAccessToken();
+            const today = new Date();
+            const hundredEightyDaysAgo = new Date();
+            hundredEightyDaysAgo.setDate(today.getDate() - 180);
+            
+            const startdateymd = hundredEightyDaysAgo.toISOString().split('T')[0];
+            const enddateymd = today.toISOString().split('T')[0];
+
+            console.log("[Withings-PMC] Fetching 180 days of sleep summaries...");
+            const sleepResponse = await axios.post('https://wbsapi.withings.net/v2/sleep', 
+                new URLSearchParams({ action: 'getsummary', startdateymd, enddateymd }).toString(),
+                {
+                    headers: {
+                        'Authorization': `Bearer ${withingsToken}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                }
+            );
+
+            if (sleepResponse.data && sleepResponse.data.status === 0 && sleepResponse.data.body && sleepResponse.data.body.series) {
+                const series = sleepResponse.data.body.series;
+                const allRhrs = series.map(s => s.data.hr_average).filter(hr => hr > 0);
+                if (allRhrs.length > 0) {
+                    averageRhr = Math.round(allRhrs.reduce((a, b) => a + b, 0) / allRhrs.length);
+                }
+
+                series.forEach(s => {
+                    sleepMap[s.date] = {
+                        score: s.data.sleep_score || 75,
+                        rhr: s.data.hr_average || 55
+                    };
+                });
+                withingsConnected = true;
+            }
+
+            console.log("[Withings-PMC] Fetching 180 days of weight measurements...");
+            const startdate = Math.floor(hundredEightyDaysAgo.getTime() / 1000);
+            const enddate = Math.floor(today.getTime() / 1000);
+            const measureResponse = await axios.post('https://wbsapi.withings.net/measure', 
+                new URLSearchParams({ action: 'getmeas', startdate, enddate }).toString(),
+                {
+                    headers: {
+                        'Authorization': `Bearer ${withingsToken}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                }
+            );
+
+            if (measureResponse.data && measureResponse.data.status === 0 && measureResponse.data.body && measureResponse.data.body.measuregrps) {
+                measureResponse.data.body.measuregrps.forEach(grp => {
+                    const dateStr = new Date(grp.date * 1000).toISOString().split('T')[0];
+                    grp.measures.forEach(m => {
+                        if (m.type === 1) { // Peso
+                            const realValue = m.value * Math.pow(10, m.unit);
+                            weightMap[dateStr] = parseFloat(realValue.toFixed(1));
+                        }
+                    });
+                });
+            }
+        } catch (e) {
+            console.log(`[Withings-PMC] Sincronización biométrica PMC no disponible: ${e.message}`);
+        }
+
         // Construir mapa fecha -> carga diaria (TRIMP proxy)
         const loadByDay = {};
         allActivities.forEach(act => {
             const dateStr = new Date(act.start_date).toISOString().split('T')[0];
-            // Estimación de carga: suffer_score de Strava o duración * factor FC
             let load = act.suffer_score || 0;
             if (!load && act.moving_time) {
                 const hrFactor = act.has_heartrate ? (act.average_heartrate / 150) : 0.7;
                 load = Math.round((act.moving_time / 60) * hrFactor * 0.5);
             }
+            
+            // Ajustar TSS según peso corporal real Withings del día
+            const isWeightSensitive = act.type === 'Run' || act.type === 'Walk' || act.type === 'Ride' || act.type === 'VirtualRide';
+            const dailyWeight = weightMap[dateStr];
+            if (isWeightSensitive && dailyWeight) {
+                load = Math.round(load * (dailyWeight / 74.0)); // 74kg peso objetivo base
+            }
+
             loadByDay[dateStr] = (loadByDay[dateStr] || 0) + load;
         });
 
@@ -721,16 +800,34 @@ app.get('/api/fitness', async (req, res) => {
             ctl = ctl * ctlDecay + load * (1 - ctlDecay);
             atl = atl * atlDecay + load * (1 - atlDecay);
             const tsb = ctl - atl;
+            
+            // Calcular TSB Fisiológico con biometría Withings
+            let tsbPhysio = tsb;
+            const sleepInfo = sleepMap[dateStr];
+            if (sleepInfo) {
+                const sleepScore = sleepInfo.score;
+                const currentRhr = sleepInfo.rhr;
+                const sleepFactor = (sleepScore - 75) / 100;
+                let rhrScore = 0;
+                if (currentRhr > 0) {
+                    const rhrDiff = currentRhr - averageRhr;
+                    rhrScore = -rhrDiff * 2; // Multiplicador de penalización aprobado por el usuario
+                }
+                tsbPhysio = tsb + (sleepFactor * 15) + rhrScore;
+            }
+
             days.push({
                 date: dateStr,
                 label: d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
                 ctl: parseFloat(ctl.toFixed(1)),
                 atl: parseFloat(atl.toFixed(1)),
                 tsb: parseFloat(tsb.toFixed(1)),
-                load
+                tsbPhysio: parseFloat(tsbPhysio.toFixed(1)),
+                load,
+                hasPhysio: !!sleepInfo
             });
         }
-        res.json(days);
+        res.json({ days, withingsConnected });
     } catch (error) {
         if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') res.status(401).json({ error: 'No autenticado' });
         else { console.error(error.message); res.status(500).json({ error: 'Error calculando fitness' }); }

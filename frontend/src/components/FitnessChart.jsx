@@ -6,16 +6,21 @@ import {
 import { Zap, Calendar, TrendingUp } from 'lucide-react';
 
 const FitnessChart = ({ data }) => {
-  if (!data || data.length === 0) return null;
+  const chartDays = data?.days || [];
+  const withingsConnected = data?.withingsConnected || false;
+
+  if (!chartDays || chartDays.length === 0) return null;
 
   // Estados interactivos para Timeframe y Simulador de Carga Futura
   const [timeframe, setTimeframe] = useState(90); // 30, 90, 180
   const [futureTss, setFutureTss] = useState(40); // Carga diaria por defecto para simulación (TSS)
   const [showSimulator, setShowSimulator] = useState(false);
+  const [showPhysioTsb, setShowPhysioTsb] = useState(true);
 
   // Filtrar el histórico de acuerdo al rango seleccionado
-  const historicalData = data.slice(-timeframe);
-  const latest = historicalData[historicalData.length - 1] || data[data.length - 1];
+  const historicalData = chartDays.slice(-timeframe);
+  const hasPhysioData = historicalData.some(d => d.hasPhysio);
+  const latest = historicalData[historicalData.length - 1] || chartDays[chartDays.length - 1];
 
   // 1. Zonas de entrenamiento científicas de Coggan basadas en el TSB
   const getCogganZone = (tsb) => {
@@ -201,8 +206,29 @@ const FitnessChart = ({ data }) => {
         </div>
       </div>
 
-      {/* BOTÓN PARA ABRIR EL SIMULADOR DE CARGA FUTURA */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      {/* BOTONES PMC (SIMULADOR Y WITHINGS PHYSIO TSB) */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+        {hasPhysioData && (
+          <button
+            onClick={() => setShowPhysioTsb(!showPhysioTsb)}
+            style={{
+              background: showPhysioTsb ? 'rgba(0, 229, 255, 0.12)' : 'rgba(255,255,255,0.04)',
+              color: showPhysioTsb ? '#00e5ff' : 'var(--text-primary)',
+              border: `1px solid ${showPhysioTsb ? '#00e5ff' : 'var(--glass-border)'}`,
+              borderRadius: '8px',
+              padding: '0.4rem 1rem',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            📊 {showPhysioTsb ? 'Ocultar TSB Fisiológico' : 'Mostrar TSB Fisiológico (Withings)'}
+          </button>
+        )}
         <button
           onClick={() => setShowSimulator(!showSimulator)}
           style={{
@@ -344,7 +370,10 @@ const FitnessChart = ({ data }) => {
                       <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                         <span style={{ color: 'var(--health-cyan)' }}>CTL: <strong>{item.ctl}</strong></span>
                         <span style={{ color: 'var(--strava-orange)' }}>ATL: <strong>{item.atl}</strong></span>
-                        <span style={{ color: itemTsbStatus.color }}>TSB: <strong>{item.tsb > 0 ? '+' : ''}{item.tsb}</strong></span>
+                        <span style={{ color: itemTsbStatus.color }}>TSB Teórico: <strong>{item.tsb > 0 ? '+' : ''}{item.tsb}</strong></span>
+                        {item.hasPhysio && (
+                          <span style={{ color: '#00e5ff' }}>TSB Fisiológico: <strong>{item.tsbPhysio > 0 ? '+' : ''}{item.tsbPhysio}</strong></span>
+                        )}
                       </div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '0.25rem', marginTop: '0.25rem' }}>
                         Carga diaria: {item.load || 0} · {itemTsbStatus.label}
@@ -382,7 +411,10 @@ const FitnessChart = ({ data }) => {
             {/* Líneas de entrenamiento */}
             <Line type="monotone" dataKey="ctl" stroke="#06b6d4" strokeWidth={2.5} dot={false} name="CTL (Fitness)" activeDot={{ r: 4 }} />
             <Line type="monotone" dataKey="atl" stroke="#FC4C02" strokeWidth={1.8} dot={false} name="ATL (Fatiga)" strokeDasharray="4 2" activeDot={{ r: 3 }} />
-            <Line type="monotone" dataKey="tsb" stroke="#10b981" strokeWidth={2} dot={false} name="TSB (Forma)" activeDot={{ r: 4 }} />
+            <Line type="monotone" dataKey="tsb" stroke="#10b981" strokeWidth={2} dot={false} name="TSB Teórico (Forma)" activeDot={{ r: 4 }} />
+            {showPhysioTsb && hasPhysioData && (
+              <Line type="monotone" dataKey="tsbPhysio" stroke="#00e5ff" strokeWidth={2.5} dot={false} name="TSB Fisiológico" activeDot={{ r: 5 }} />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
