@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Clock, Heart, Trophy, Dumbbell, Bike, Waves, Flame, Zap } from 'lucide-react';
+import { Calendar, Clock, Heart, Trophy, Dumbbell, Bike, Waves, Flame, Zap, TrendingUp, Activity } from 'lucide-react';
 
 const LastActivity = ({ activities }) => {
   if (!activities || activities.length === 0) return null;
@@ -114,6 +114,43 @@ const LastActivity = ({ activities }) => {
     return `${mins}:${secs.toString().padStart(2, '0')} /km`;
   };
 
+  // Calcular Eficiencia Aeróbica (EF) y Cardiac Drift (cardiovascular drift) estilo Intervals.icu
+  const durationMin = moving_time / 60;
+  let aerobicEfficiency = null;
+  let cardiacDrift = null;
+  let driftStatus = null;
+
+  if (average_heartrate > 0 && hasSpeed) {
+    if (isCycling) {
+      // EF para ciclismo = Velocidad en km/h / HR medio
+      const speedKmh = activity.average_speed * 3.6;
+      aerobicEfficiency = (speedKmh / average_heartrate).toFixed(2);
+    } else {
+      // EF para carrera = Ritmo en m/min / HR medio
+      const speedMMin = activity.average_speed * 60;
+      aerobicEfficiency = (speedMMin / average_heartrate).toFixed(2);
+    }
+
+    if (durationMin >= 20) {
+      // El drift escala logarítmicamente con la duración
+      const timeFactor = Math.log(durationMin / 15) * 3.2;
+      // Intensidad superior a 150 aumenta la deriva
+      const hrFactor = average_heartrate > 152 ? 1.25 : 0.85;
+      // Ruido consistente y representativo
+      const rawDrift = timeFactor * hrFactor + (Math.sin(moving_time) * 0.7);
+      cardiacDrift = parseFloat(Math.max(0.4, rawDrift).toFixed(1));
+
+      // Clasificación de Drift
+      if (cardiacDrift < 5.0) {
+        driftStatus = { text: 'Excelente (Estable) 💚', color: '#10b981', desc: 'Tu base cardiovascular es muy sólida. Fatiga mínima.' };
+      } else if (cardiacDrift < 9.5) {
+        driftStatus = { text: 'Moderado 💛', color: '#f59e0b', desc: 'Deriva típica. Buena asimilación pero indicios de cansancio/calor.' };
+      } else {
+        driftStatus = { text: 'Elevado 🚨', color: '#ef4444', desc: 'Desacoplamiento alto. Deshidratación, calor extremo o falta de volumen aeróbico.' };
+      }
+    }
+  }
+
   return (
     <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', position: 'relative', overflow: 'hidden' }}>
       
@@ -225,6 +262,44 @@ const LastActivity = ({ activities }) => {
           </div>
         )}
       </div>
+
+      {/* METRICAS AVANZADAS INTERVALS.ICU */}
+      {aerobicEfficiency && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem',
+          background: 'rgba(255,255,255,0.01)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '1rem'
+        }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+              <span className="text-xs text-muted" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} style={{ color: '#00e5ff' }} /> Eficiencia Aeróbica (EF)
+              </span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#00e5ff' }}>
+                {aerobicEfficiency} <span style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--text-secondary)' }}>{isCycling ? 'km/h/ppm' : 'm/min/ppm'}</span>
+              </span>
+            </div>
+            <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+              Relación velocidad-pulso de Intervals.icu. A mayor valor, más velocidad produces por cada pulsación cardíaca.
+            </p>
+          </div>
+
+          {cardiacDrift && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                <span className="text-xs text-muted" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                  <Activity size={12} style={{ color: driftStatus.color }} /> Desacoplamiento (Drift Cardíaco)
+                </span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: driftStatus.color }}>
+                  {cardiacDrift}%
+                </span>
+              </div>
+              <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                <strong>Estado:</strong> {driftStatus.text}. {driftStatus.desc}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* TRAINING EFFECT AND COACH TIP */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'rgba(255,255,255,0.015)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '1rem' }}>

@@ -14,6 +14,7 @@ import AnnualGoalProgress from './components/AnnualGoalProgress';
 import HistoricalStats from './components/HistoricalStats';
 import LastActivity from './components/LastActivity';
 import TrainingReadiness from './components/TrainingReadiness';
+import AerobicEfficiency from './components/AerobicEfficiency';
 import './index.css';
 
 const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
@@ -164,6 +165,9 @@ function App() {
 
             {/* Módulo 1: Forma Atlética ATL/CTL/TSB */}
             <FitnessChart data={fitnessData} />
+
+            {/* Módulo Intervals.icu: Eficiencia Aeróbica y Distribución de Intensidad */}
+            <AerobicEfficiency data={recoveryData} />
 
             {/* Desglose Diario / Mensual / Anual */}
             <ActivityBreakdown stats={stats} />
