@@ -124,7 +124,7 @@ app.get('/api/auth/callback', async (req, res) => {
             params: { client_id: process.env.STRAVA_CLIENT_ID, client_secret: process.env.STRAVA_CLIENT_SECRET, code, grant_type: 'authorization_code' }
         });
         saveTokens({ access_token: response.data.access_token, refresh_token: response.data.refresh_token, expires_at: response.data.expires_at });
-        res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
+        res.redirect(process.env.FRONTEND_URL || '/');
     } catch (error) {
         res.status(500).send('Error durante la autenticación con Strava');
     }
@@ -172,7 +172,7 @@ app.get('/api/withings/auth/callback', async (req, res) => {
                 expires_at: Math.floor(Date.now() / 1000) + body.expires_in,
                 userid: body.userid
             });
-            res.redirect(process.env.FRONTEND_URL || 'http://localhost:5173');
+            res.redirect(process.env.FRONTEND_URL || '/');
         } else {
             console.error("[Withings] Auth API failed:", response.data);
             res.status(500).send('Error de Withings API: ' + (response.data?.error || 'status no cero'));

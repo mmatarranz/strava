@@ -1,8 +1,13 @@
 import React from 'react';
 import { Calendar, Clock, Heart, Trophy, Dumbbell, Bike, Waves, Flame, Zap } from 'lucide-react';
 
-const LastActivity = ({ activity }) => {
-  if (!activity) return null;
+const LastActivity = ({ activities }) => {
+  if (!activities || activities.length === 0) return null;
+
+  const [selectedId, setSelectedId] = React.useState(activities[0].id);
+
+  // Buscar la actividad seleccionada, fallback a la última si no se encuentra
+  const activity = activities.find(a => a.id === selectedId) || activities[0];
 
   const { name, start_date, moving_time, distance, average_heartrate, max_heartrate, suffer_score } = activity;
 
@@ -15,7 +20,17 @@ const LastActivity = ({ activity }) => {
     minute: '2-digit'
   });
 
-  // Determinar icono del deporte
+  // Emojis de deportes para el select
+  const getSportEmoji = (type) => {
+    const t = type?.toLowerCase() || '';
+    if (t.includes('ciclismo') || t.includes('ride') || t.includes('bike')) return '🚴';
+    if (t.includes('natación') || t.includes('swim')) return '🏊';
+    if (t.includes('pesas') || t.includes('gym') || t.includes('indoor') || t.includes('weights')) return '💪';
+    if (t.includes('andar') || t.includes('walk') || t.includes('hike')) return '🥾';
+    return '🏃';
+  };
+
+  // Determinar icono del deporte para la vista
   const getSportIcon = (type) => {
     const t = type?.toLowerCase() || '';
     if (t.includes('ciclismo') || t.includes('ride') || t.includes('bike')) {
@@ -109,8 +124,8 @@ const LastActivity = ({ activity }) => {
       }} />
 
       {/* HEADER CARD */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
-        <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.85rem', alignItems: 'center', flex: 1, minWidth: '250px' }}>
           <div style={{
             background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)',
             borderRadius: '12px', padding: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
@@ -118,12 +133,53 @@ const LastActivity = ({ activity }) => {
             {getSportIcon(activity.sport_type || activity.type)}
           </div>
           <div>
-            <span style={{ fontSize: '0.72rem', background: 'rgba(252,76,2,0.12)', color: 'var(--strava-orange)', padding: '2px 8px', borderRadius: '5px', fontWeight: 600 }}>Último Entrenamiento</span>
+            <span style={{ fontSize: '0.72rem', background: 'rgba(252,76,2,0.12)', color: 'var(--strava-orange)', padding: '2px 8px', borderRadius: '5px', fontWeight: 600 }}>
+              {activity.id === activities[0].id ? 'Último Entrenamiento' : 'Entrenamiento Analizado'}
+            </span>
             <h2 className="text-xl" style={{ marginTop: '0.2rem', fontWeight: 700, lineHeight: 1.2 }}>{name}</h2>
             <p className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '0.15rem' }}>
               <Calendar size={12} /> {dateFormatted}
             </p>
           </div>
+        </div>
+
+        {/* SELECTOR DE SESIÓN */}
+        <div style={{ minWidth: '220px' }}>
+          <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 600 }}>
+            🔍 Analizar Sesión:
+          </label>
+          <select
+            value={selectedId}
+            onChange={(e) => setSelectedId(Number(e.target.value))}
+            style={{
+              width: '100%',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '8px',
+              padding: '0.45rem 0.8rem',
+              color: 'var(--text-primary)',
+              fontSize: '0.8rem',
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              outline: 'none',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseOver={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.25)'}
+            onMouseOut={(e) => e.target.style.borderColor = 'var(--glass-border)'}
+          >
+            {activities.slice(0, 15).map((act) => {
+              const actDate = new Date(act.start_date).toLocaleDateString('es-ES', {
+                day: '2-digit',
+                month: 'short'
+              });
+              const distStr = act.distance > 0 ? ` - ${(act.distance / 1000).toFixed(1)} km` : '';
+              return (
+                <option key={act.id} value={act.id} style={{ background: '#111827', color: 'white' }}>
+                  {getSportEmoji(act.sport_type || act.type)} {act.name} ({actDate}{distStr})
+                </option>
+              );
+            })}
+          </select>
         </div>
       </div>
 

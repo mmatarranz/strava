@@ -155,8 +155,8 @@ function App() {
 
           {/* COLUMNA PRINCIPAL */}
           <div className="dashboard-main">
-            {/* Último Entrenamiento */}
-            <LastActivity activity={activities[0]} />
+            {/* Análisis de Entrenamiento */}
+            <LastActivity activities={activities} />
 
             {/* Módulo 2: Metas semanales */}
             <WeeklyGoals goals={goalsData} onSave={handleSaveGoals} />
