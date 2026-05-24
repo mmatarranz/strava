@@ -12,6 +12,7 @@ import RecoveryPanel from './components/RecoveryPanel';
 import TrainingCalendar from './components/TrainingCalendar';
 import AnnualGoalProgress from './components/AnnualGoalProgress';
 import HistoricalStats from './components/HistoricalStats';
+import LastActivity from './components/LastActivity';
 import './index.css';
 
 const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
@@ -154,6 +155,9 @@ function App() {
 
           {/* COLUMNA PRINCIPAL */}
           <div className="dashboard-main">
+            {/* Último Entrenamiento */}
+            <LastActivity activity={activities[0]} />
+
             {/* Módulo 2: Metas semanales */}
             <WeeklyGoals goals={goalsData} onSave={handleSaveGoals} />
 
