@@ -15,6 +15,8 @@ import HistoricalStats from './components/HistoricalStats';
 import LastActivity from './components/LastActivity';
 import TrainingReadiness from './components/TrainingReadiness';
 import AerobicEfficiency from './components/AerobicEfficiency';
+import AICoachDrawer from './components/AICoachDrawer';
+import AIReportCard from './components/AIReportCard';
 import './index.css';
 
 const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
@@ -160,6 +162,9 @@ function App() {
             {/* Análisis de Entrenamiento */}
             <LastActivity activities={activities} />
 
+            {/* Diagnóstico Fisiológico IA */}
+            <AIReportCard />
+
             {/* Módulo 2: Metas semanales */}
             <WeeklyGoals goals={goalsData} onSave={handleSaveGoals} />
 
@@ -202,6 +207,8 @@ function App() {
           </div>
         </div>
       )}
+      {/* Asistente Deportivo IA Flotante */}
+      <AICoachDrawer />
     </>
   );
 }
