@@ -841,7 +841,7 @@ const GOALS_FILE = path.join(__dirname, 'goals.json');
 const DEFAULT_GOALS = {
     Running:      { unit: 'km',       target: 30,  icon: '🏃' },
     Ciclismo:     { unit: 'km',       target: 100, icon: '🚴' },
-    'Ciclo Indoor':{ unit: 'min',     target: 120, icon: '🏋️' },
+    'Ciclo Indoor':{ unit: 'km',       target: 50,  icon: '🏋️' },
     Natación:     { unit: 'm',        target: 4000,icon: '🏊' },
     Pesas:        { unit: 'sesiones', target: 3,   icon: '💪' },
     Estiramientos:{ unit: 'min',      target: 60,  icon: '🧘' },
