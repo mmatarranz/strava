@@ -84,7 +84,7 @@ cd strava
 
 ## Primer inicio de sesión
 
-1. Abre en tu navegador la dirección del frontend (`http://localhost:5173`).
+1. Abre en tu navegador la dirección del frontend (``).http://localhost:5173
 2. Haz clic en **Autenticar con Strava** o inicia sesión.
 3. Serás redirigido a la página oficial de autorización de Strava para conceder permisos de lectura a la aplicación.
 4. Una vez autorizado, volverás automáticamente al dashboard y podrás ver el análisis completo de tus datos, gráficos de rendimiento semanal/anual y panel de recuperación de salud.

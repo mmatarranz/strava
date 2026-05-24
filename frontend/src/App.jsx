@@ -13,6 +13,7 @@ import TrainingCalendar from './components/TrainingCalendar';
 import AnnualGoalProgress from './components/AnnualGoalProgress';
 import HistoricalStats from './components/HistoricalStats';
 import LastActivity from './components/LastActivity';
+import TrainingReadiness from './components/TrainingReadiness';
 import './index.css';
 
 const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
@@ -186,6 +187,9 @@ function App() {
 
           {/* SIDEBAR DERECHO */}
           <div className="dashboard-sidebar">
+            {/* Predisposición Diaria (Readiness) */}
+            <TrainingReadiness data={recoveryData} />
+
             {/* Módulo 5: Recuperación */}
             <RecoveryPanel data={recoveryData} />
 
