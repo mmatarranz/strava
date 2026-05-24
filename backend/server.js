@@ -1276,6 +1276,10 @@ app.get('/api/recovery', async (req, res) => {
             sleepData, rhrData, hrvData, readinessScore, recoveryScore: readinessScore,
             strainScore: strainHistory[6].strain, strainHistory, withingsConnected
         });
+    } catch (error) {
+        if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') res.status(401).json({ error: 'No autenticado' });
+        else res.status(500).json({ error: 'Error obteniendo recuperación' });
+    }
 });
 
 // ---------------------------
