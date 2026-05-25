@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -1466,7 +1466,7 @@ Hoy debes dar prioridad absoluta a la recuperación:
 Como tu preparador físico virtual, te recomiendo:
 * **Entrenamiento**: Mantente constante con metas cómodas. Si tu preparación es mayor de 70, puedes meter intensidad; de lo contrario, céntrate en la base.
 * **Descanso**: Prioriza dormir entre 7.5 y 8.5 horas para restaurar tu pasillo biométrico de HRV.
-* *Nota: Añade tu GEMINI_API_KEY en el servidor para activar las respuestas dinámicas completas de IA.*`;
+* ` + (process.env.GEMINI_API_KEY ? '*Nota: Se ha detectado tu GEMINI_API_KEY en el servidor, pero la llamada a la API de Gemini ha fallado. Revisa los logs del servidor para ver el error.*' : '*Nota: Añade tu GEMINI_API_KEY en el servidor para activar las respuestas dinámicas completas de IA.*');
         }
 
         res.json({ reply: localReply, mock: true });
@@ -1522,7 +1522,7 @@ app.get('/api/ai/weekly-report', async (req, res) => {
 * **Días de Intensidad (Series)**: Ideal programar trabajos de umbral los días con mayor calidad de sueño.
 * **Recuperación**: Mantener al menos 1 día de descanso completo o regenerativo para restablecer tus reservas de glucógeno y disipar la fatiga del sistema nervioso simpático.
 
-> *Tip del Coach:* Recuerda añadir tu \`GEMINI_API_KEY\` en el archivo de configuración para recibir un diagnóstico semanal 100% dinámico y personalizado con recomendaciones moleculares completas de tu IA.`;
+> *Tip del Coach:* ` + (process.env.GEMINI_API_KEY ? 'Se ha detectado tu \\`GEMINI_API_KEY\\` en el servidor, pero la llamada a la API de Gemini ha fallado. Revisa los logs del servidor para ver el error.' : 'Recuerda añadir tu \\`GEMINI_API_KEY\\` en el archivo de configuración para recibir un diagnóstico semanal 100% dinámico y personalizado con recomendaciones moleculares completas de tu IA.') + '`;'
 
         // Si hay clave Gemini, generamos uno completamente dinámico
         if (process.env.GEMINI_API_KEY) {
