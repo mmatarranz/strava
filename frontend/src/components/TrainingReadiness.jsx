@@ -33,11 +33,14 @@ const TrainingReadiness = ({ data }) => {
   // Formatear datos para el gráfico de corredor de HRV
   // hrvData.history es de 28 días
   const hrvChartData = hrvData?.history ? hrvData.history.map((val, idx) => {
+    const minVal = hrvData.corridorMin[idx] || 45;
+    const maxVal = hrvData.corridorMax[idx] || 65;
     return {
       day: idx + 1,
       hrv: val,
-      min: hrvData.corridorMin[idx] || 45,
-      max: hrvData.corridorMax[idx] || 65,
+      min: minVal,
+      max: maxVal,
+      corridor: [minVal, maxVal],
       rolling7: hrvData.rolling7 ? hrvData.rolling7[idx] : val
     };
   }) : [];
@@ -238,8 +241,8 @@ const TrainingReadiness = ({ data }) => {
               <ComposedChart data={hrvChartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                 <defs>
                   <linearGradient id="corridorColor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.06}/>
-                    <stop offset="95%" stopColor="#00e5ff" stopOpacity={0.005}/>
+                    <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.16}/>
+                    <stop offset="95%" stopColor="#00e5ff" stopOpacity={0.03}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
@@ -251,7 +254,7 @@ const TrainingReadiness = ({ data }) => {
                 />
                 
                 {/* Biometric corridor limits */}
-                <Area dataKey="max" stroke="none" fill="url(#corridorColor)" />
+                <Area type="monotone" dataKey="corridor" stroke="none" fill="url(#corridorColor)" name="Pasillo Biométrico" />
                 <Line dataKey="max" stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="3 3" dot={false} activeDot={false} name="Límite Superior" />
                 <Line dataKey="min" stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="3 3" dot={false} activeDot={false} name="Límite Inferior" />
                 
