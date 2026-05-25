@@ -1429,6 +1429,9 @@ Mantén tu respuesta corta y estructurada en un máximo de 2-3 párrafos breves.
                 }
             } catch (err) {
                 console.error("[AI-Coach] Gemini API error, falling back to offline coach:", err.message);
+                if (err.response && err.response.data) {
+                    console.error("[AI-Coach] Gemini API detailed error:", JSON.stringify(err.response.data, null, 2));
+                }
             }
         }
 
@@ -1551,6 +1554,9 @@ Usa viñetas, mantén el tono profesional pero motivador, e imprímele rigor cie
                 }
             } catch (err) {
                 console.error("[AI-Report] Gemini API failed, using structured fallback report:", err.message);
+                if (err.response && err.response.data) {
+                    console.error("[AI-Report] Gemini API detailed error:", JSON.stringify(err.response.data, null, 2));
+                }
             }
         }
 
