@@ -1402,6 +1402,7 @@ Mantén tu respuesta corta y estructurada en un máximo de 2-3 párrafos breves.
         // Llamar a Gemini API si existe la clave API
         if (process.env.GEMINI_API_KEY) {
             console.log("[AI-Coach] Querying Google Gemini API...");
+            const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
             try {
                 const contents = [];
                 if (chatHistory && Array.isArray(chatHistory)) {
@@ -1418,7 +1419,7 @@ Mantén tu respuesta corta y estructurada en un máximo de 2-3 párrafos breves.
                 });
 
                 const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+                    `https://generativelanguage.googleapis.com/v1beta/models/` + geminiModel + `:generateContent?key=${process.env.GEMINI_API_KEY}`,
                     { contents },
                     { headers: { 'Content-Type': 'application/json' } }
                 );
@@ -1530,6 +1531,7 @@ app.get('/api/ai/weekly-report', async (req, res) => {
         // Si hay clave Gemini, generamos uno completamente dinámico
         if (process.env.GEMINI_API_KEY) {
             console.log("[AI-Report] Generating dynamic weekly sports report with Gemini...");
+            const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
             try {
                 const systemPrompt = `Eres un científico deportivo de élite. Escribe un reporte diagnóstico de entrenamiento deportivo personalizado para Miguel basándote en estos datos de sus últimos 28 días:
 - Volumen de 28 días: ${kmTotal} km, ${hoursTotal} horas.
@@ -1544,7 +1546,7 @@ Escribe un reporte de 3 secciones cortas en formato Markdown:
 Usa viñetas, mantén el tono profesional pero motivador, e imprímele rigor científico.`;
 
                 const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+                    `https://generativelanguage.googleapis.com/v1beta/models/` + geminiModel + `:generateContent?key=${process.env.GEMINI_API_KEY}`,
                     { contents: [{ role: 'user', parts: [{ text: systemPrompt }] }] },
                     { headers: { 'Content-Type': 'application/json' } }
                 );
