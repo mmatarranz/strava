@@ -24,7 +24,7 @@ const MainChart = ({ activities }) => {
     const minutes = act.moving_time / 60;
     if (act.category === 'Endurance') dataMap[dateStr].Endurance += minutes;
     if (act.category === 'Indoor/Gym') dataMap[dateStr].Indoor += minutes;
-    if (act.category === 'Agua') dataMap[dateStr].Agua += minutes;
+    if (act.category === 'Natación' || act.category === 'Agua') dataMap[dateStr].Agua += minutes;
   });
 
   const data = Object.values(dataMap).reverse(); // simple sort for mock
@@ -54,9 +54,9 @@ const MainChart = ({ activities }) => {
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <Tooltip contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: 'var(--glass-border)', borderRadius: '8px' }} />
             <Legend wrapperStyle={{ paddingTop: '20px' }} />
-            <Area type="monotone" dataKey="Endurance" stackId="1" stroke="var(--chart-endurance)" fill="url(#colorEndurance)" />
-            <Area type="monotone" dataKey="Indoor" stackId="1" stroke="var(--chart-indoor)" fill="url(#colorIndoor)" />
-            <Area type="monotone" dataKey="Agua" stackId="1" stroke="var(--chart-water)" fill="url(#colorAgua)" />
+            <Area type="monotone" dataKey="Endurance" name="Resistencia" stackId="1" stroke="var(--chart-endurance)" fill="url(#colorEndurance)" />
+            <Area type="monotone" dataKey="Indoor" name="Gimnasio / Indoor" stackId="1" stroke="var(--chart-indoor)" fill="url(#colorIndoor)" />
+            <Area type="monotone" dataKey="Agua" name="Natación" stackId="1" stroke="var(--chart-water)" fill="url(#colorAgua)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
