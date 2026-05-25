@@ -84,8 +84,8 @@ const GoalCard = ({ title, emoji, total, goal, outdoor, indoor, projected, kmNee
             <div style={{ height: '8px', background: 'rgba(255,255,255,0.07)', borderRadius: '4px', overflow: 'hidden' }}>
               <div style={{
                 height: '100%', width: `${pct}%`, borderRadius: '4px',
-                background: `linear-gradient(90deg, ${color}88, ${color})`,
-                transition: 'width 1s ease', boxShadow: `0 0 8px ${color}66`
+                background: color,
+                transition: 'width 1s ease', boxShadow: `0 0 6px ${color}`
               }} />
             </div>
           </div>
