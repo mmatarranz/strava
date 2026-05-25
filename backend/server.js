@@ -816,6 +816,8 @@ app.get('/api/fitness', async (req, res) => {
                 tsbPhysio = tsb + (sleepFactor * 15) + rhrScore;
             }
 
+            const acwr = ctl > 0 ? parseFloat((atl / ctl).toFixed(2)) : 0.0;
+
             days.push({
                 date: dateStr,
                 label: d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
@@ -824,7 +826,8 @@ app.get('/api/fitness', async (req, res) => {
                 tsb: parseFloat(tsb.toFixed(1)),
                 tsbPhysio: parseFloat(tsbPhysio.toFixed(1)),
                 load,
-                hasPhysio: !!sleepInfo
+                hasPhysio: !!sleepInfo,
+                acwr
             });
         }
         res.json(days);
@@ -1172,12 +1175,21 @@ app.get('/api/recovery', async (req, res) => {
         const currentHrv = hrvHistory28[27];
         const hrvAverage = Math.round(hrvHistory28.reduce((a, b) => a + b, 0) / 28);
 
+        const hrvRolling7 = [];
+        for (let i = 0; i < 28; i++) {
+            const startIdx = Math.max(0, i - 6);
+            const window = hrvHistory28.slice(startIdx, i + 1);
+            const avg = window.reduce((a, b) => a + b, 0) / window.length;
+            hrvRolling7.push(parseFloat(avg.toFixed(1)));
+        }
+
         const hrvData = {
             history: hrvHistory28,
             corridorMin: hrvCorridorMin,
             corridorMax: hrvCorridorMax,
             current: currentHrv,
-            average: hrvAverage
+            average: hrvAverage,
+            rolling7: hrvRolling7
         };
 
         // ----------------------------------------
@@ -1270,11 +1282,14 @@ app.get('/api/recovery', async (req, res) => {
             });
         }
 
+        const acwrToday = ctl > 0 ? parseFloat((atl / ctl).toFixed(2)) : 0.0;
+
         res.json({
             activeDays: activeDays.size, restDays, streak,
             zones: zonePcts, hasHrData: hrActs.length > 0, last28,
             sleepData, rhrData, hrvData, readinessScore, recoveryScore: readinessScore,
-            strainScore: strainHistory[6].strain, strainHistory, withingsConnected
+            strainScore: strainHistory[6].strain, strainHistory, withingsConnected,
+            acwr: acwrToday
         });
     } catch (error) {
         if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') res.status(401).json({ error: 'No autenticado' });

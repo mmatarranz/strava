@@ -48,7 +48,18 @@ const FitnessChart = ({ data }) => {
 
   const rampStatus = getRampRateStatus(rampRate);
 
-  // 3. Simulación de Carga Futura (7 días) usando fórmulas exponenciales del PMC
+  // 3. Obtener el estado del ACWR (Acute-to-Chronic Workload Ratio)
+  const getAcwrTheme = (acwr) => {
+    if (!acwr) return { label: 'Sin Carga 🛌', color: '#94a3b8', desc: 'No se registran actividades de entrenamiento en el período reciente.' };
+    if (acwr > 1.5) return { label: 'Zona Peligro 🚨', color: '#ef4444', desc: 'Carga aguda muy alta. Riesgo exponencialmente elevado de lesión.' };
+    if (acwr >= 1.3 && acwr <= 1.5) return { label: 'Zona Límite ⚡', color: '#f59e0b', desc: 'Carga de entrenamiento muy exigente. Presta extrema atención a la recuperación.' };
+    if (acwr >= 0.8 && acwr < 1.3) return { label: 'Zona Dulce ✅', color: '#10b981', desc: 'Relación óptima entre fatiga acumulada y forma. Fitness seguro y progresivo.' };
+    return { label: 'Desentrenamiento 🛌', color: '#38bdf8', desc: 'Carga aguda muy baja respecto a tu base histórica. Pérdida paulatina de adaptación.' };
+  };
+
+  const acwrStatus = getAcwrTheme(latest.acwr);
+
+  // 4. Simulación de Carga Futura (7 días) usando fórmulas exponenciales del PMC
   let simCtl = latest.ctl;
   let simAtl = latest.atl;
   const ctlDecay = Math.exp(-1 / 42);
@@ -62,6 +73,7 @@ const FitnessChart = ({ data }) => {
     simCtl = simCtl * ctlDecay + futureTss * (1 - ctlDecay);
     simAtl = simAtl * atlDecay + futureTss * (1 - atlDecay);
     const simTsb = simCtl - simAtl;
+    const simAcwr = simCtl > 0 ? parseFloat((simAtl / simCtl).toFixed(2)) : 0;
 
     simulatedDays.push({
       date: nextDate.toISOString().split('T')[0],
@@ -70,7 +82,8 @@ const FitnessChart = ({ data }) => {
       atl: parseFloat(simAtl.toFixed(1)),
       tsb: parseFloat(simTsb.toFixed(1)),
       load: futureTss,
-      isFuture: true
+      isFuture: true,
+      acwr: simAcwr
     });
   }
 
@@ -98,7 +111,7 @@ const FitnessChart = ({ data }) => {
             Forma Atlética Profesional (PMC)
           </h2>
           <p className="text-muted text-xs">
-            Fitness crónico (CTL) · Fatiga aguda (ATL) · Balance de forma (TSB) basado en el modelo de Coggan
+            Fitness crónico (CTL) · Fatiga aguda (ATL) · Balance de forma (TSB) · Progresión segura (ACWR)
           </p>
         </div>
 
@@ -131,7 +144,7 @@ const FitnessChart = ({ data }) => {
       </div>
 
       {/* MÉTRICAS PRINCIPALES DE ESTADO ACTUAL */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
         
         {/* FITNESS */}
         <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '12px', padding: '0.75rem 1rem' }}>
@@ -180,17 +193,34 @@ const FitnessChart = ({ data }) => {
           </p>
         </div>
 
+        {/* ACWR (RATIO AGUDO/CRÓNICO) */}
+        <div style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${acwrStatus.color}33`, borderRadius: '12px', padding: '0.75rem 1rem' }}>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: acwrStatus.color }}></span>
+            Carga Aguda/Crónica (ACWR)
+          </p>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginTop: '0.25rem' }}>
+            <span style={{ fontSize: '1.75rem', fontWeight: 700, color: acwrStatus.color }}>
+              {latest.acwr || '0.0'}
+            </span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>ratio</span>
+          </div>
+          <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '0.2rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={acwrStatus.label}>
+            Estado: <strong>{acwrStatus.label}</strong>
+          </p>
+        </div>
+
       </div>
 
       {/* WIDGET DE DETALLE DE ZONA Y TASA DE RAMPA */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '0.75rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
         
         {/* DESCRIPCIÓN DE LA ZONA COGGAN */}
         <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '0.75rem 1rem', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
             Zona TSB: <span style={{ color: tsbStatus.color }}>{tsbStatus.zone}</span>
           </p>
-          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
             {tsbStatus.desc}
           </p>
         </div>
@@ -200,8 +230,18 @@ const FitnessChart = ({ data }) => {
           <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
             Velocidad de Adaptación: <span style={{ color: rampStatus.color }}>{rampStatus.text}</span>
           </p>
-          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
             {rampStatus.desc}
+          </p>
+        </div>
+
+        {/* EXPLICACIÓN DEL ACWR */}
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '0.75rem 1rem' }}>
+          <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
+            Progresión de Carga (ACWR): <span style={{ color: acwrStatus.color }}>{acwrStatus.label}</span>
+          </p>
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: '1.35' }}>
+            {acwrStatus.desc}
           </p>
         </div>
       </div>
@@ -370,7 +410,10 @@ const FitnessChart = ({ data }) => {
                       <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem', flexWrap: 'wrap' }}>
                         <span style={{ color: 'var(--health-cyan)' }}>CTL: <strong>{item.ctl}</strong></span>
                         <span style={{ color: 'var(--strava-orange)' }}>ATL: <strong>{item.atl}</strong></span>
-                        <span style={{ color: itemTsbStatus.color }}>TSB Teórico: <strong>{item.tsb > 0 ? '+' : ''}{item.tsb}</strong></span>
+                        <span style={{ color: itemTsbStatus.color }}>TSB: <strong>{item.tsb > 0 ? '+' : ''}{item.tsb}</strong></span>
+                        {item.acwr !== undefined && (
+                          <span style={{ color: getAcwrTheme(item.acwr).color }}>ACWR: <strong>{item.acwr}</strong></span>
+                        )}
                         {item.hasPhysio && (
                           <span style={{ color: '#00e5ff' }}>TSB Fisiológico: <strong>{item.tsbPhysio > 0 ? '+' : ''}{item.tsbPhysio}</strong></span>
                         )}
@@ -419,15 +462,27 @@ const FitnessChart = ({ data }) => {
         </ResponsiveContainer>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '0.75rem 1rem', fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-        <p>
-          💡 <strong style={{ color: 'var(--text-primary)' }}>Regla de oro de Coggan:</strong>
-        </p>
-        <ul style={{ paddingLeft: '1.2rem', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-          <li><span style={{ color: '#10b981', fontWeight: 600 }}>Pico de Forma (TSB +5 a +25):</span> Estrés disipado y gran frescura muscular. Momento perfecto para carreras.</li>
-          <li><span style={{ color: '#f59e0b', fontWeight: 600 }}>Entrenamiento Óptimo (TSB -10 a -30):</span> Carga óptima que induce adaptaciones cardiovasculares estables.</li>
-          <li><span style={{ color: '#ef4444', fontWeight: 600 }}>Peligro (TSB &lt; -30):</span> Alta fatiga metabólica. Riesgo muy elevado de lesión y estancamiento.</li>
-        </ul>
+      <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '0.85rem 1.1rem', fontSize: '0.74rem', color: 'var(--text-secondary)', display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: '240px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <p>
+            💡 <strong style={{ color: 'var(--text-primary)' }}>Regla de oro de Coggan (Zonas de TSB):</strong>
+          </p>
+          <ul style={{ paddingLeft: '1.2rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            <li><span style={{ color: '#10b981', fontWeight: 600 }}>Pico de Forma (+5 a +25):</span> Gran frescura muscular. Momento perfecto para competir al máximo.</li>
+            <li><span style={{ color: '#f59e0b', fontWeight: 600 }}>Entrenamiento Óptimo (-10 a -30):</span> Zona productiva que estimula adaptaciones cardiovasculares.</li>
+            <li><span style={{ color: '#ef4444', fontWeight: 600 }}>Sobrecarga Extrema (&lt; -30):</span> Riesgo muy elevado de lesión, sobreentrenamiento o estancamiento.</li>
+          </ul>
+        </div>
+        <div style={{ flex: 1, minWidth: '240px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <p>
+            🛡️ <strong style={{ color: 'var(--text-primary)' }}>Relación de Progresión Segura (ACWR):</strong>
+          </p>
+          <ul style={{ paddingLeft: '1.2rem', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            <li><span style={{ color: '#10b981', fontWeight: 600 }}>Zona Dulce (0.80 a 1.29):</span> Progresión de carga segura. Excelente equilibrio fisiológico.</li>
+            <li><span style={{ color: '#f59e0b', fontWeight: 600 }}>Zona Límite (1.30 a 1.49):</span> Incrementos muy exigentes. Monitorea tu fatiga y sueño de Withings.</li>
+            <li><span style={{ color: '#ef4444', fontWeight: 600 }}>Zona de Peligro (&gt;= 1.50):</span> Progresión brusca. Multiplica por 4 el riesgo estadístico de lesión.</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

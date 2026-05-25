@@ -37,7 +37,8 @@ const TrainingReadiness = ({ data }) => {
       day: idx + 1,
       hrv: val,
       min: hrvData.corridorMin[idx] || 45,
-      max: hrvData.corridorMax[idx] || 65
+      max: hrvData.corridorMax[idx] || 65,
+      rolling7: hrvData.rolling7 ? hrvData.rolling7[idx] : val
     };
   }) : [];
 
@@ -228,7 +229,7 @@ const TrainingReadiness = ({ data }) => {
           <div>
             <h3 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0 }}>Pasillo Biométrico de Variabilidad Cardíaca</h3>
             <p className="text-muted text-xs" style={{ marginTop: '2px' }}>
-              Tu HRV diario (cian) cruzando tu corredor de homeostasis parasimpática de 21 días (sombra).
+              Tu HRV diario (fino/cian) y su tendencia de 7 días (verde) cruzando el pasillo de 21 días (sombra).
             </p>
           </div>
 
@@ -255,7 +256,8 @@ const TrainingReadiness = ({ data }) => {
                 <Line dataKey="min" stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="3 3" dot={false} activeDot={false} name="Límite Inferior" />
                 
                 {/* Active HRV path */}
-                <Line type="monotone" dataKey="hrv" stroke="#00e5ff" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} name="HRV Diario" />
+                <Line type="monotone" dataKey="hrv" stroke="#00e5ff" strokeWidth={1.5} strokeOpacity={0.6} dot={false} activeDot={{ r: 3 }} name="HRV Diario" />
+                <Line type="monotone" dataKey="rolling7" stroke="#10b981" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} name="Tendencia 7d" />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -264,7 +266,7 @@ const TrainingReadiness = ({ data }) => {
             background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.15)', borderRadius: '8px',
             padding: '0.5rem 0.8rem', fontSize: '0.72rem', color: '#e0f7fa', lineHeight: 1.35
           }}>
-            ℹ️ <strong>Interpretación:</strong> Si la línea cian se mantiene **dentro** de la franja ensombrecida, tu sistema nervioso se adapta bien a la fatiga y puedes entrenar duro. Si desciende por debajo de la franja, indica estrés vegetativo (simpático dominante).
+            ℹ️ <strong>Interpretación:</strong> La línea verde (tendencia de 7 días) filtra el ruido diario. Si se mantiene estable **dentro** del pasillo ensombrecido, estás absorbiendo la carga correctamente. Caídas por debajo del pasillo indican estrés acumulado y necesidad de descanso.
           </div>
         </div>
       )}
