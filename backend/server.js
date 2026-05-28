@@ -646,9 +646,12 @@ app.get('/api/health', async (req, res) => {
     
     try {
         const withingsToken = await getWithingsValidAccessToken();
-        console.log("[Withings] Fetching weight/body fat biometrics from API...");
+        console.log("[Withings] Fetching weight/body fat/composition/cardio biometrics from API...");
         const response = await axios.post('https://wbsapi.withings.net/measure', 
-            new URLSearchParams({ action: 'getmeas' }).toString(),
+            new URLSearchParams({
+                action: 'getmeas',
+                meastypes: '1,6,76,77,88,91,155'
+            }).toString(),
             {
                 headers: {
                     'Authorization': `Bearer ${withingsToken}`,
@@ -661,6 +664,11 @@ app.get('/api/health', async (req, res) => {
             const grps = response.data.body.measuregrps;
             const weights = [];
             const fats = [];
+            const muscleMasses = [];
+            const hydrationMasses = [];
+            const boneMasses = [];
+            const pwvs = [];
+            const vascularAges = [];
             
             grps.forEach(grp => {
                 grp.measures.forEach(m => {
@@ -669,6 +677,16 @@ app.get('/api/health', async (req, res) => {
                         weights.push(parseFloat(realValue.toFixed(1)));
                     } else if (m.type === 6) {
                         fats.push(parseFloat(realValue.toFixed(1)));
+                    } else if (m.type === 76) {
+                        muscleMasses.push(parseFloat(realValue.toFixed(1)));
+                    } else if (m.type === 77) {
+                        hydrationMasses.push(parseFloat(realValue.toFixed(1)));
+                    } else if (m.type === 88) {
+                        boneMasses.push(parseFloat(realValue.toFixed(1)));
+                    } else if (m.type === 91) {
+                        pwvs.push(parseFloat(realValue.toFixed(2)));
+                    } else if (m.type === 155) {
+                        vascularAges.push(Math.round(realValue));
                     }
                 });
             });
@@ -681,6 +699,21 @@ app.get('/api/health', async (req, res) => {
             const currentFat = fats[0] || 15.5;
             const prevFat = fats[1] || 16.0;
             
+            // Calcular agua real en %
+            const waterMass = hydrationMasses[0] || 42.4;
+            const waterPct = parseFloat(((waterMass / currentWeight) * 100).toFixed(1));
+
+            const composition = {
+                muscleMass: muscleMasses[0] || 60.5,
+                boneMass: boneMasses[0] || 3.2,
+                waterPct: hydrationMasses[0] ? waterPct : 56.4
+            };
+
+            const cardio = {
+                pwv: pwvs[0] || 6.2,
+                vascularAge: vascularAges[0] || 28
+            };
+
             // Buscar actividad de Withings (últimos 7 días)
             let activityData = {
                 currentSteps: 8450,
@@ -732,6 +765,8 @@ app.get('/api/health', async (req, res) => {
                     goal: 14.0,
                     previous: prevFat
                 },
+                composition,
+                cardio,
                 hydration: defaultHydration,
                 activity: activityData,
                 withingsConnected: true
@@ -745,6 +780,15 @@ app.get('/api/health', async (req, res) => {
         res.json({
             weight:    { current: 75.2, goal: 74.0, previous: 76.0, history: [76, 75.8, 75.5, 75.4, 75.2] },
             bodyFat:   { current: 15.5, goal: 14.0, previous: 16.0 },
+            composition: {
+                muscleMass: 60.5,
+                boneMass: 3.2,
+                waterPct: 56.4
+            },
+            cardio: {
+                pwv: 6.2,
+                vascularAge: 28
+            },
             hydration: defaultHydration,
             activity: {
                 currentSteps: 8450,
@@ -1156,10 +1200,22 @@ app.get('/api/recovery', async (req, res) => {
                 
                 const currentSleepScore = sleepScores28[0] || 75;
 
+                const latestSeries = series[0]?.data || {};
+                const deepHours = parseFloat(((latestSeries.deepsleepduration || 0) / 3600).toFixed(1));
+                const lightHours = parseFloat(((latestSeries.lightsleepduration || 0) / 3600).toFixed(1));
+                const remHours = parseFloat(((latestSeries.remsleepduration || 0) / 3600).toFixed(1));
+                const awakeHours = parseFloat(((latestSeries.wakeupduration || 0) / 3600).toFixed(1));
+
                 sleepData = {
                     history: [...sleepHistory28].slice(0, 28).reverse(),
                     average: avgSleep,
-                    currentScore: currentSleepScore
+                    currentScore: currentSleepScore,
+                    stages: {
+                        deep: deepHours > 0 ? deepHours : 1.8,
+                        light: lightHours > 0 ? lightHours : 4.2,
+                        rem: remHours > 0 ? remHours : 1.5,
+                        awake: awakeHours > 0 ? awakeHours : 0.3
+                    }
                 };
                 
                 rhrData = {
@@ -1187,7 +1243,13 @@ app.get('/api/recovery', async (req, res) => {
             sleepData = {
                 history: sleepHistory28,
                 average: 7.3,
-                currentScore: 78
+                currentScore: 78,
+                stages: {
+                    deep: 1.8,
+                    light: 4.2,
+                    rem: 1.5,
+                    awake: 0.3
+                }
             };
         }
         if (!rhrData) {

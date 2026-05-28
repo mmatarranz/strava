@@ -1,16 +1,19 @@
 import React from 'react';
-import { Droplet, Scale, ActivitySquare, TrendingDown, TrendingUp, Moon, Heart, Footprints } from 'lucide-react';
+import { Droplet, Scale, ActivitySquare, TrendingDown, TrendingUp, Moon, Heart, Footprints, HeartPulse, Dumbbell } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 
 const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
   if (!healthData || healthData.error) return <div className="dashboard-sidebar">Cargando biometría...</div>;
 
-  const { weight, bodyFat, hydration, activity, withingsConnected } = healthData;
+  const { weight, bodyFat, hydration, activity, composition, cardio, withingsConnected } = healthData;
 
   const weightTrend = weight.current < weight.previous ? 'down' : 'up';
   const fatTrend = bodyFat.current < bodyFat.previous ? 'down' : 'up';
   
-  const hydrationPercent = Math.min((hydration.currentLiters / hydration.dailyGoal) * 100, 100);
+  const compData = composition || { muscleMass: 60.5, boneMass: 3.2, waterPct: 56.4 };
+  const cardioData = cardio || { pwv: 6.2, vascularAge: 28 };
+  
+  const hydrationPercent = compData.waterPct;
 
   // Weight history Recharts formatting
   const weightChartData = weight.history.map((w, i) => ({ day: i, weight: w }));
@@ -169,29 +172,82 @@ const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
         </div>
       </div>
 
-      {/* 💧 HYDRATION CARD */}
+      {/* 💧 AGUA CORPORAL / HIDRATACIÓN REAL CARD */}
       <div className="glass-panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <h3 className="text-muted text-sm text-gradient-health" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Droplet size={16} /> Hidratación (Hoy)
+            <Droplet size={16} /> Agua Corporal (Withings)
           </h3>
+          {withingsConnected && <span style={{ fontSize: '0.65rem', background: 'rgba(6,182,212,0.15)', color: 'var(--health-cyan)', padding: '2px 6px', borderRadius: '4px' }}>Impedancia</span>}
         </div>
-        <div className="text-2xl" style={{ marginBottom: '0.75rem', fontWeight: 600 }}>
-          {hydration.currentLiters} <span className="text-sm text-muted">/ {hydration.dailyGoal} L</span>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.5rem' }}>
+          <span className="text-3xl" style={{ fontWeight: 700 }}>{compData.waterPct.toFixed(1)} <span className="text-sm text-muted">%</span></span>
+          <span className="text-xs text-muted" style={{ color: compData.waterPct >= 50 && compData.waterPct <= 65 ? 'var(--health-green)' : '#f59e0b', fontSize: '0.7rem' }}>
+            {compData.waterPct >= 50 && compData.waterPct <= 65 ? '✓ Hidratación Óptima' : '⚠️ Hidratación Baja'}
+          </span>
         </div>
         
         <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
           <div 
             style={{ 
               height: '100%', 
-              width: `${hydrationPercent}%`, 
-              background: 'linear-gradient(90deg, var(--health-cyan), #38bdf8)',
+              width: `${(compData.waterPct / 75) * 100}%`, 
+              background: 'linear-gradient(90deg, #38bdf8, var(--health-cyan))',
               transition: 'width 0.5s ease-in-out'
             }} 
           />
         </div>
-        <div className="text-xs text-muted" style={{ marginTop: '0.4rem', textAlign: 'right' }}>
-          {hydrationPercent.toFixed(0)}% completado
+        <div className="text-xs text-muted" style={{ marginTop: '0.4rem', display: 'flex', justifyContent: 'space-between' }}>
+          <span>Límites atletas: 50% - 65%</span>
+          <span>{hydration.currentLiters}L bebido hoy</span>
+        </div>
+      </div>
+
+      {/* 🧬 COMPOSICIÓN Y SALUD CARDIOVASCULAR CARD */}
+      <div className="glass-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 className="text-muted text-sm text-gradient-health" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <HeartPulse size={16} /> Composición & Cardio
+          </h3>
+          {withingsConnected && <span style={{ fontSize: '0.65rem', background: 'rgba(6,182,212,0.15)', color: 'var(--health-cyan)', padding: '2px 6px', borderRadius: '4px' }}>Clínico</span>}
+        </div>
+        
+        {/* Desglose de Masa Muscular y Ósea */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="text-xs text-muted" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Dumbbell size={12} /> Masa Muscular</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'white' }}>{compData.muscleMass} kg</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="text-xs text-muted" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Scale size={12} /> Masa Ósea</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'white' }}>{compData.boneMass} kg</span>
+          </div>
+        </div>
+
+        <hr style={{ border: 'none', borderTop: '1px solid var(--glass-border)', margin: '0.6rem 0' }} />
+
+        {/* Métricas Cardiovasculares Avanzadas */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="text-xs text-muted">Edad Vascular</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--health-cyan)' }}>
+              {cardioData.vascularAge} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>años</span>
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="text-xs text-muted">Rigidez Arterial (PWV)</span>
+            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--health-cyan)' }}>
+              {cardioData.pwv} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>m/s</span>
+            </span>
+          </div>
+        </div>
+        
+        {/* Cardio status indicator */}
+        <div style={{ 
+          marginTop: '0.75rem', background: 'rgba(6,182,212,0.05)', border: '1px solid rgba(6,182,212,0.12)', 
+          borderRadius: '6px', padding: '0.4rem 0.6rem', fontSize: '0.68rem', color: '#e0f7fa', textAlign: 'center' 
+        }}>
+          💡 {cardioData.pwv < 7.0 ? '✓ Excelente elasticidad arterial (Óptimo)' : '⚠️ Elasticidad arterial estándar'}
         </div>
       </div>
 

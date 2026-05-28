@@ -82,6 +82,56 @@ const RecoveryPanel = ({ data }) => {
         ))}
       </div>
 
+      {/* 😴 DESGLOSE DE FASES DE SUEÑO (WITHINGS) */}
+      {sleepData?.stages && (
+        <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.6rem', fontWeight: 600 }}>
+            Desglose de Fases de Sueño (Última Noche)
+          </p>
+          
+          {/* Segmented bar */}
+          <div style={{ 
+            width: '100%', height: '12px', background: 'rgba(255,255,255,0.04)', 
+            borderRadius: '6px', overflow: 'hidden', display: 'flex', marginBottom: '0.75rem' 
+          }}>
+            {[
+              { key: 'deep',  val: sleepData.stages.deep,  color: '#06b6d4' },
+              { key: 'light', val: sleepData.stages.light, color: '#10b981' },
+              { key: 'rem',   val: sleepData.stages.rem,   color: '#8b5cf6' },
+              { key: 'awake', val: sleepData.stages.awake, color: '#f59e0b' }
+            ].map(({ key, val, color }) => {
+              const totalTime = sleepData.stages.deep + sleepData.stages.light + sleepData.stages.rem + sleepData.stages.awake || 1;
+              const pct = (val / totalTime) * 100;
+              return val > 0 ? (
+                <div 
+                  key={key} 
+                  title={`${key}: ${val}h (${Math.round(pct)}%)`}
+                  style={{ height: '100%', width: `${pct}%`, background: color, transition: 'width 0.5s ease' }} 
+                />
+              ) : null;
+            })}
+          </div>
+
+          {/* Leyenda de fases */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem 0.75rem' }}>
+            {[
+              { label: 'Profundo (Físico)', val: `${sleepData.stages.deep}h`, color: '#06b6d4', desc: 'Recuperación de fibras' },
+              { label: 'REM (Neural)', val: `${sleepData.stages.rem}h`, color: '#8b5cf6', desc: 'Asimilación mental' },
+              { label: 'Ligero', val: `${sleepData.stages.light}h`, color: '#10b981', desc: 'Transición/Descanso' },
+              { label: 'Despierto', val: `${sleepData.stages.awake}h`, color: '#f59e0b', desc: 'Interrupciones nocturnas' }
+            ].map(({ label, val, color, desc }) => (
+              <div key={label} style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, marginTop: '4px' }} />
+                <div>
+                  <p style={{ fontSize: '0.72rem', fontWeight: 600, color: 'white', lineHeight: '1.2' }}>{label} <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>· {val}</span></p>
+                  <p style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', lineHeight: '1.1' }}>{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* MINI-CALENDARIO DE LOS ÚLTIMOS 28 DÍAS */}
       <div>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Días de entrenamiento (28d)</p>
