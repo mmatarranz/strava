@@ -1,15 +1,90 @@
 import React from 'react';
-import { Calendar, Clock, Heart, Trophy, Dumbbell, Bike, Waves, Flame, Zap, TrendingUp, Activity } from 'lucide-react';
+import { Calendar, Clock, Heart, Trophy, Dumbbell, Bike, Waves, Flame, Zap, TrendingUp, Activity, BrainCircuit, Sparkles, RefreshCw } from 'lucide-react';
 
 const LastActivity = ({ activities }) => {
   if (!activities || activities.length === 0) return null;
 
   const [selectedId, setSelectedId] = React.useState(activities[0].id);
+  const [aiAnalysis, setAiAnalysis] = React.useState(null);
+  const [loadingAi, setLoadingAi] = React.useState(false);
+  const [errorAi, setErrorAi] = React.useState(null);
 
   // Buscar la actividad seleccionada, fallback a la última si no se encuentra
   const activity = activities.find(a => a.id === selectedId) || activities[0];
 
   const { name, start_date, moving_time, distance, average_heartrate, max_heartrate, suffer_score } = activity;
+
+  // Carga asíncrona del reporte fisiológico con IA
+  React.useEffect(() => {
+    if (!selectedId) return;
+
+    let isMounted = true;
+    const fetchAiAnalysis = async () => {
+      setLoadingAi(true);
+      setErrorAi(null);
+      try {
+        const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
+        const res = await fetch(`${API_URL}/activities/${selectedId}/ai-analyze`, {
+          method: 'POST'
+        });
+        if (!res.ok) {
+          throw new Error(`Error en el servidor: ${res.status}`);
+        }
+        const data = await res.json();
+        if (isMounted) {
+          if (data.analysis) {
+            setAiAnalysis(data.analysis);
+          } else {
+            setAiAnalysis('No se recibió el reporte de análisis.');
+          }
+        }
+      } catch (err) {
+        console.error("Error al obtener análisis de IA:", err);
+        if (isMounted) {
+          setErrorAi('No se pudo conectar con el servicio de análisis de IA. Inténtalo de nuevo.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingAi(false);
+        }
+      }
+    };
+
+    fetchAiAnalysis();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedId]);
+
+  // Parseador de Markdown a HTML utilizando Regex
+  const parseMarkdownToHTML = (md) => {
+    if (!md) return '';
+    let html = md;
+    
+    // Encabezados
+    html = html.replace(/^### (.*?)$/gm, '<h3 style="font-size: 0.9rem; font-weight: 800; color: #00e5ff; margin: 1rem 0 0.4rem 0; display: flex; align-items: center; gap: 6px;">$1</h3>');
+    html = html.replace(/^#### (.*?)$/gm, '<h4 style="font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin: 0.5rem 0 0.25rem 0;">$1</h4>');
+    
+    // Negritas
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="color: white; font-weight: 700;">$1</strong>');
+    
+    // Citas estilo Blockquote
+    html = html.replace(/^> \*(.*?)\*$/gm, '<div style="background: rgba(139, 92, 246, 0.06); border-left: 3px solid #8b5cf6; border-radius: 4px; padding: 0.5rem 0.75rem; margin: 0.75rem 0; font-size: 0.72rem; color: #ebd8ff; font-style: italic;">💡 $1</div>');
+    html = html.replace(/^> (.*?)$/gm, '<div style="background: rgba(255,255,255,0.01); border-left: 3px solid var(--glass-border); padding: 0.5rem; margin: 0.5rem 0; font-size: 0.72rem; color: var(--text-secondary); font-style: italic;">$1</div>');
+    
+    // Viñetas estilo lista
+    html = html.replace(/^\* (.*?)$/gm, '<li style="margin-left: 1rem; list-style-type: disc; margin-bottom: 0.25rem; font-size: 0.75rem;">$1</li>');
+    html = html.replace(/^- (.*?)$/gm, '<li style="margin-left: 1rem; list-style-type: disc; margin-bottom: 0.25rem; font-size: 0.75rem;">$1</li>');
+    
+    // Código
+    html = html.replace(/`(.*?)`/g, '<code style="background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 0.7rem; color: #ff7b47;">$1</code>');
+    
+    // Saltos de línea
+    html = html.replace(/\n/g, '<br />');
+
+    return html;
+  };
 
   // Formatear fecha legible en español
   const dateFormatted = new Date(start_date).toLocaleDateString('es-ES', {
@@ -338,6 +413,135 @@ const LastActivity = ({ activities }) => {
           </div>
         </div>
       </div>
+
+      {/* SECCIÓN DE ANÁLISIS DE IA EXTENDIDO */}
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: '0.75rem', 
+        background: 'rgba(255,255,255,0.015)', 
+        border: '1px solid var(--glass-border)', 
+        borderRadius: '12px', 
+        padding: '1.25rem',
+        marginTop: '0.25rem',
+        position: 'relative'
+      }}>
+        {/* HEADER DE IA */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(0, 229, 255, 0.15), rgba(139, 92, 246, 0.15))',
+              border: '1px solid rgba(0, 229, 255, 0.25)',
+              borderRadius: '8px', padding: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}>
+              <BrainCircuit size={16} style={{ color: '#00e5ff' }} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-primary)' }}>
+                Diagnóstico Fisiológico y Carga con IA <Sparkles size={12} style={{ color: '#8b5cf6' }} />
+              </h3>
+              <p className="text-muted" style={{ fontSize: '0.65rem', margin: 0 }}>
+                Análisis deportivo avanzado y estimación de supercompensación (Gemini)
+              </p>
+            </div>
+          </div>
+          
+          {/* BOTÓN DE RECARGA */}
+          <button
+            onClick={() => {
+              setLoadingAi(true);
+              setErrorAi(null);
+              const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
+              fetch(`${API_URL}/activities/${selectedId}/ai-analyze`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                  if (data.analysis) {
+                    setAiAnalysis(data.analysis);
+                  } else {
+                    setErrorAi('No se recibió el reporte de análisis.');
+                  }
+                  setLoadingAi(false);
+                })
+                .catch(err => {
+                  console.error(err);
+                  setErrorAi('Error al recargar el análisis.');
+                  setLoadingAi(false);
+                });
+            }}
+            disabled={loadingAi}
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '6px',
+              padding: '0.35rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-secondary)',
+              transition: 'all 0.2s'
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'; e.currentTarget.style.color = 'white'; }}
+            onMouseOut={(e) => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+          >
+            <RefreshCw size={12} className={loadingAi ? 'animate-spin' : ''} />
+          </button>
+        </div>
+
+        {/* CONTENIDO DEL REPORTE / SKELETON */}
+        {loadingAi ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '0.5rem 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="skeleton-pulse" style={{ width: '100px', height: '14px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <div className="skeleton-pulse" style={{ width: '100%', height: '12px', borderRadius: '3px', background: 'rgba(255,255,255,0.03)' }} />
+              <div className="skeleton-pulse" style={{ width: '95%', height: '12px', borderRadius: '3px', background: 'rgba(255,255,255,0.03)' }} />
+              <div className="skeleton-pulse" style={{ width: '70%', height: '12px', borderRadius: '3px', background: 'rgba(255,255,255,0.03)' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '0.5rem' }}>
+              <div className="skeleton-pulse" style={{ width: '140px', height: '14px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <div className="skeleton-pulse" style={{ width: '98%', height: '12px', borderRadius: '3px', background: 'rgba(255,255,255,0.03)' }} />
+              <div className="skeleton-pulse" style={{ width: '85%', height: '12px', borderRadius: '3px', background: 'rgba(255,255,255,0.03)' }} />
+            </div>
+          </div>
+        ) : errorAi ? (
+          <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', fontSize: '0.72rem', color: '#fca5a5' }}>
+            ⚠️ {errorAi}
+          </div>
+        ) : (
+          <div 
+            style={{ 
+              fontSize: '0.74rem', 
+              color: 'var(--text-secondary)', 
+              lineHeight: 1.45,
+              background: 'rgba(255,255,255,0.002)',
+              padding: '0.25rem 0',
+              overflowY: 'auto'
+            }}
+            dangerouslySetInnerHTML={{ __html: parseMarkdownToHTML(aiAnalysis) }}
+          />
+        )}
+      </div>
+
+      <style>{`
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .skeleton-pulse {
+          animation: pulse 1.6s ease-in-out infinite;
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.35; }
+          50% { opacity: 0.85; }
+        }
+      `}</style>
 
     </div>
   );

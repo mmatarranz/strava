@@ -387,6 +387,85 @@ app.get('/api/activities', async (req, res) => {
 
 });
 
+app.post('/api/activities/:id/ai-analyze', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const token = await getValidAccessToken();
+        
+        // 1. Obtener detalles completos de la actividad desde la API de Strava
+        console.log(`[AI-Activity] Fetching details for activity ${id}...`);
+        const stravaRes = await axios.get(`https://www.strava.com/api/v3/activities/${id}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const act = stravaRes.data;
+
+        // 2. Generar el reporte con Gemini
+        let aiReport = "";
+        
+        if (process.env.GEMINI_API_KEY) {
+            console.log(`[AI-Activity] Analyzing activity ${id} with Gemini...`);
+            const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+            
+            const prompt = `Eres un preparador físico y fisiólogo deportivo de élite. Escribe un análisis exhaustivo y motivador sobre la siguiente sesión de entrenamiento realizada por Miguel:
+Actividad: "${act.name}"
+Tipo: ${act.sport_type || act.type}
+Distancia: ${(act.distance / 1000).toFixed(2)} km
+Duración: ${(act.moving_time / 60).toFixed(1)} minutos
+Pulso medio: ${act.average_heartrate || 'N/A'} ppm
+Pulso máximo: ${act.max_heartrate || 'N/A'} ppm
+Esfuerzo relativo de Strava: ${act.suffer_score || 'N/A'}
+Desnivel positivo acumulado: ${act.total_elevation_gain || 0} metros
+Calorías quemadas: ${act.calories || 'N/A'} kcal
+
+Escribe un informe diagnóstico en formato Markdown estructurado con los siguientes apartados:
+### 🔍 Fisiología del Esfuerzo
+Analiza las zonas de pulso implicadas (si hay cardio), el impacto metabólico de las calorías y la asimilación del desnivel.
+### 📈 Supercompensación y Carga (PMC)
+Explica cómo influyen estos ${act.suffer_score || 20} puntos de esfuerzo en su Fitness crónico (CTL) y cuánta fatiga (ATL) le añaden.
+### 🧘 Pautas de Recuperación Específicas
+Di qué comer (nutrición), beber (hidratación) y cuántas horas de sueño profundo necesita exactamente para asimilar esta sesión hoy.
+
+Mantén un tono riguroso, científico, alentador y personalizado para Miguel.`;
+
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+                    { contents: [{ role: 'user', parts: [{ text: prompt }] }] },
+                    { headers: { 'Content-Type': 'application/json' } }
+                );
+
+                if (response.data && response.data.candidates && response.data.candidates[0].content) {
+                    aiReport = response.data.candidates[0].content.parts[0].text;
+                }
+            } catch (err) {
+                console.error("[AI-Activity] Gemini call failed:", err.message);
+            }
+        }
+
+        // Fallback local estructurado si no hay clave de API o si falla la llamada
+        if (!aiReport) {
+            aiReport = `### 🔍 Fisiología del Esfuerzo (${act.sport_type || act.type})
+* **Zonas de Pulso:** Tu pulso medio de **${act.average_heartrate || 130} ppm** indica un trabajo predominantemente aeróbico, excelente para construir resistencia cardiovascular y optimizar el metabolismo lipídico.
+* **Metabolismo:** Las calorías quemadas representan una depleción parcial de glucógeno. Buen trabajo de asimilación general.
+* **Desnivel:** Se han acumulado **${act.total_elevation_gain || 0} metros** de ascenso positivo, estimulando la fuerza-resistencia en tus cuádriceps e isquiotibiales.
+
+### 📈 Supercompensación y Carga (PMC)
+* Esta sesión suma **${act.suffer_score || 15} puntos de Esfuerzo Relativo**. 
+* Tu fatiga aguda (**ATL**) se elevará ligeramente de forma temporal, pero sirve como estímulo perfecto para provocar adaptaciones positivas a medio plazo, elevando tu línea base de Fitness (**CTL**).
+
+### 🧘 Pautas de Recuperación Específicas
+* **Hidratación:** Repón el peso perdido en sudor. Se sugieren 500-750 ml de agua con electrolitos (sodio, magnesio) en las próximas 2 horas.
+* **Nutrición:** Ventana de recuperación de 45 minutos activa: consume hidratos de carbono complejos combinados con 20g de proteína de alta calidad para reparar fibras musculares.
+* **Descanso:** Prioriza el sueño de calidad de al menos 7.5 horas con foco en fases de sueño profundo (recuperación muscular/hormonal).`;
+        }
+
+        res.json({ analysis: aiReport });
+    } catch (error) {
+        console.error("Error en /api/activities/ai-analyze:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // ---------------------------
 // ENDPOINT: PROGRESO ANUAL (Ciclismo + Running vs objetivo)
 // ---------------------------
