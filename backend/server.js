@@ -418,15 +418,25 @@ app.get('/api/annual-progress', async (req, res) => {
         }));
 
         let totalCycling = 0, totalCicloIndoor = 0, totalRunning = 0;
+        let totalCyclingElevation = 0, totalRunningElevation = 0;
 
         yearActivities.forEach(act => {
             const m = new Date(act.start_date).getMonth();
             const km = parseFloat((act.distance / 1000).toFixed(2));
+            const elev = act.total_elevation_gain || 0;
             if (isCycling(act)) {
-                if (isIndoorCycling(act)) { months[m].cicloIndoor += km; totalCicloIndoor += km; }
-                else { months[m].cycling += km; totalCycling += km; }
+                if (isIndoorCycling(act)) {
+                    months[m].cicloIndoor += km;
+                    totalCicloIndoor += km;
+                } else {
+                    months[m].cycling += km;
+                    totalCycling += km;
+                    totalCyclingElevation += elev;
+                }
             } else if (isRunning(act)) {
-                months[m].running += km; totalRunning += km;
+                months[m].running += km;
+                totalRunning += km;
+                totalRunningElevation += elev;
             }
         });
 
@@ -442,23 +452,32 @@ app.get('/api/annual-progress', async (req, res) => {
         const totalCyclingAll = parseFloat((totalCycling + totalCicloIndoor).toFixed(1));
         const avgCycling = totalCyclingAll / monthsElapsed;
         const avgRunning = totalRunning / monthsElapsed;
+        const avgCyclingElevation = totalCyclingElevation / monthsElapsed;
+        const avgRunningElevation = totalRunningElevation / monthsElapsed;
 
         res.json({
             year,
-            goals: { cycling: 4000, running: 700 },
+            goals: { cycling: 4000, running: 700, cyclingElevation: 30000, runningElevation: 10000 },
             totals: {
                 cycling: totalCyclingAll,
                 cyclingOutdoor: parseFloat(totalCycling.toFixed(1)),
                 cyclingIndoor: parseFloat(totalCicloIndoor.toFixed(1)),
-                running: parseFloat(totalRunning.toFixed(1))
+                running: parseFloat(totalRunning.toFixed(1)),
+                cyclingElevation: Math.round(totalCyclingElevation),
+                runningElevation: Math.round(totalRunningElevation),
+                totalElevation: Math.round(totalCyclingElevation + totalRunningElevation)
             },
             projected: {
                 cycling: parseFloat((avgCycling * 12).toFixed(0)),
-                running: parseFloat((avgRunning * 12).toFixed(0))
+                running: parseFloat((avgRunning * 12).toFixed(0)),
+                cyclingElevation: parseFloat(((avgCyclingElevation * 12).toFixed(0))),
+                runningElevation: parseFloat(((avgRunningElevation * 12).toFixed(0)))
             },
             kmNeeded: {
                 cycling: parseFloat(Math.max(0, 4000 - totalCyclingAll).toFixed(1)),
-                running: parseFloat(Math.max(0, 700 - totalRunning).toFixed(1))
+                running: parseFloat(Math.max(0, 700 - totalRunning).toFixed(1)),
+                cyclingElevation: Math.max(0, 30000 - totalCyclingElevation),
+                runningElevation: Math.max(0, 10000 - totalRunningElevation)
             },
             monthsRemaining: 12 - monthsElapsed,
             monthly: months.slice(0, monthsElapsed + 1)
@@ -603,7 +622,7 @@ app.get('/api/stats', async (req, res) => {
             const distanceKm  = parseFloat((act.distance / 1000).toFixed(2));
 
             const emptyRow = (key, sortVal) => {
-                const row = { label: key, _sort: sortVal, count: 0, durationMin: 0, distanceKm: 0 };
+                const row = { label: key, _sort: sortVal, count: 0, durationMin: 0, distanceKm: 0, elevationGain: 0 };
                 TRACKED_ACTIVITIES.forEach(a => row[a] = 0);
                 return row;
             };
@@ -613,6 +632,7 @@ app.get('/api/stats', async (req, res) => {
                 group[key].count      += 1;
                 group[key].durationMin = parseFloat((group[key].durationMin + durationMin).toFixed(1));
                 group[key].distanceKm  = parseFloat((group[key].distanceKm + distanceKm).toFixed(2));
+                group[key].elevationGain = Math.round(group[key].elevationGain + (act.total_elevation_gain || 0));
                 group[key][actLabel]   = (group[key][actLabel] || 0) + 1;
             };
 
@@ -650,7 +670,7 @@ app.get('/api/health', async (req, res) => {
         const response = await axios.post('https://wbsapi.withings.net/measure', 
             new URLSearchParams({
                 action: 'getmeas',
-                meastypes: '1,6,76,77,88,91,155'
+                meastypes: '1,6,9,10,76,77,88,91,155'
             }).toString(),
             {
                 headers: {
@@ -669,6 +689,8 @@ app.get('/api/health', async (req, res) => {
             const boneMasses = [];
             const pwvs = [];
             const vascularAges = [];
+            const diastolics = [];
+            const systolics = [];
             
             grps.forEach(grp => {
                 grp.measures.forEach(m => {
@@ -677,6 +699,10 @@ app.get('/api/health', async (req, res) => {
                         weights.push(parseFloat(realValue.toFixed(1)));
                     } else if (m.type === 6) {
                         fats.push(parseFloat(realValue.toFixed(1)));
+                    } else if (m.type === 9) {
+                        diastolics.push(Math.round(realValue));
+                    } else if (m.type === 10) {
+                        systolics.push(Math.round(realValue));
                     } else if (m.type === 76) {
                         muscleMasses.push(parseFloat(realValue.toFixed(1)));
                     } else if (m.type === 77) {
@@ -698,6 +724,16 @@ app.get('/api/health', async (req, res) => {
             
             const currentFat = fats[0] || 15.5;
             const prevFat = fats[1] || 16.0;
+
+            const currentSystolic = systolics[0] || 115;
+            const prevSystolic = systolics[1] || 116;
+            const systolicHistory = systolics.slice(0, 10).reverse();
+            if (systolicHistory.length === 0) systolicHistory.push(118, 117, 116, 115, 115);
+
+            const currentDiastolic = diastolics[0] || 75;
+            const prevDiastolic = diastolics[1] || 76;
+            const diastolicHistory = diastolics.slice(0, 10).reverse();
+            if (diastolicHistory.length === 0) diastolicHistory.push(78, 77, 76, 75, 75);
             
             // Calcular agua real en %
             const waterMass = hydrationMasses[0] || 42.4;
@@ -712,6 +748,19 @@ app.get('/api/health', async (req, res) => {
             const cardio = {
                 pwv: pwvs[0] || 6.2,
                 vascularAge: vascularAges[0] || 28
+            };
+
+            const bloodPressure = {
+                systolic: {
+                    current: currentSystolic,
+                    previous: prevSystolic,
+                    history: systolicHistory
+                },
+                diastolic: {
+                    current: currentDiastolic,
+                    previous: prevDiastolic,
+                    history: diastolicHistory
+                }
             };
 
             // Buscar actividad de Withings (últimos 7 días)
@@ -767,6 +816,7 @@ app.get('/api/health', async (req, res) => {
                 },
                 composition,
                 cardio,
+                bloodPressure,
                 hydration: defaultHydration,
                 activity: activityData,
                 withingsConnected: true
@@ -788,6 +838,10 @@ app.get('/api/health', async (req, res) => {
             cardio: {
                 pwv: 6.2,
                 vascularAge: 28
+            },
+            bloodPressure: {
+                systolic: { current: 115, previous: 118, history: [118, 117, 116, 115, 115] },
+                diastolic: { current: 75, previous: 77, history: [78, 77, 76, 75, 75] }
             },
             hydration: defaultHydration,
             activity: {
@@ -1189,6 +1243,7 @@ app.get('/api/recovery', async (req, res) => {
                 sleepHistory28 = series.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
                 rhrHistory28 = series.map(s => s.data.hr_average).filter(hr => hr > 0);
                 sleepScores28 = series.map(s => s.data.sleep_score || 75);
+                const breathingHistory28 = series.map(s => s.data.breathing_rate || 13.5).filter(br => br > 0);
 
                 const avgSleep = sleepHistory28.length > 0 
                     ? parseFloat((sleepHistory28.reduce((a, b) => a + b, 0) / sleepHistory28.length).toFixed(1)) 
@@ -1197,6 +1252,10 @@ app.get('/api/recovery', async (req, res) => {
                 const avgRhr = rhrHistory28.length > 0 
                     ? Math.round(rhrHistory28.reduce((a, b) => a + b, 0) / rhrHistory28.length) 
                     : 56;
+
+                const avgBreathing = breathingHistory28.length > 0
+                    ? parseFloat((breathingHistory28.reduce((a, b) => a + b, 0) / breathingHistory28.length).toFixed(1))
+                    : 13.4;
                 
                 const currentSleepScore = sleepScores28[0] || 75;
 
@@ -1210,6 +1269,11 @@ app.get('/api/recovery', async (req, res) => {
                     history: [...sleepHistory28].slice(0, 28).reverse(),
                     average: avgSleep,
                     currentScore: currentSleepScore,
+                    breathingRate: {
+                        current: breathingHistory28[0] || 13.2,
+                        average: avgBreathing,
+                        history: [...breathingHistory28].slice(0, 28).reverse()
+                    },
                     stages: {
                         deep: deepHours > 0 ? deepHours : 1.8,
                         light: lightHours > 0 ? lightHours : 4.2,
@@ -1240,10 +1304,16 @@ app.get('/api/recovery', async (req, res) => {
         if (!sleepData) {
             sleepHistory28 = [7.5, 6.8, 8.2, 7.0, 6.5, 7.8, 7.2, 7.4, 6.9, 8.0, 7.1, 6.4, 7.9, 7.3, 7.6, 6.7, 8.1, 7.2, 6.6, 7.8, 7.4, 7.5, 6.8, 8.3, 7.1, 6.5, 7.9, 7.2];
             sleepScores28 = [78, 65, 85, 72, 60, 82, 75, 76, 68, 84, 70, 58, 80, 74, 77, 64, 83, 73, 62, 79, 76, 78, 66, 86, 71, 61, 81, 73];
+            const breathingMockHistory = [13.4, 13.6, 13.2, 13.5, 13.8, 13.1, 13.3, 13.5, 13.7, 13.2, 13.4, 13.6, 13.3, 13.5, 13.4, 13.6, 13.2, 13.5, 13.8, 13.1, 13.3, 13.5, 13.7, 13.2, 13.4, 13.6, 13.3, 13.2];
             sleepData = {
                 history: sleepHistory28,
                 average: 7.3,
                 currentScore: 78,
+                breathingRate: {
+                    current: 13.2,
+                    average: 13.4,
+                    history: breathingMockHistory
+                },
                 stages: {
                     deep: 1.8,
                     light: 4.2,

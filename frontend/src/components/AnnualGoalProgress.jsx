@@ -28,7 +28,7 @@ const ArcProgress = ({ pct, color, size = 160 }) => {
   );
 };
 
-const GoalCard = ({ title, emoji, total, goal, outdoor, indoor, projected, kmNeeded, monthsRemaining, color }) => {
+const GoalCard = ({ title, emoji, total, goal, val1, val2, label1 = "Exterior", label2 = "Indoor", projected, kmNeeded, monthsRemaining, color, unit = 'km' }) => {
   const pct = Math.min((total / goal) * 100, 100);
   const onTrack = projected >= goal;
   const monthlyNeeded = monthsRemaining > 0 ? (kmNeeded / monthsRemaining).toFixed(0) : 0;
@@ -70,7 +70,7 @@ const GoalCard = ({ title, emoji, total, goal, outdoor, indoor, projected, kmNee
             <p style={{ fontSize: '1.6rem', fontWeight: 800, color, lineHeight: 1 }}>
               {total.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
             </p>
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>/ {goal.toLocaleString()} km</p>
+            <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>/ {goal.toLocaleString()} {unit}</p>
           </div>
         </div>
 
@@ -93,10 +93,10 @@ const GoalCard = ({ title, emoji, total, goal, outdoor, indoor, projected, kmNee
           {/* Stats compactos */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
             {[
-              { l: 'Proyección', v: `${projected.toLocaleString()} km`, c: onTrack ? '#10b981' : '#ef4444' },
-              { l: 'Faltan', v: `${kmNeeded.toLocaleString()} km`, c: 'var(--text-secondary)' },
+              { l: 'Proyección', v: `${projected.toLocaleString()} ${unit}`, c: onTrack ? '#10b981' : '#ef4444' },
+              { l: 'Faltan', v: `${kmNeeded.toLocaleString()} ${unit}`, c: 'var(--text-secondary)' },
               { l: 'Meses restantes', v: monthsRemaining, c: 'var(--text-secondary)' },
-              { l: 'Necesitas/mes', v: `${monthlyNeeded} km`, c: onTrack ? 'var(--text-secondary)' : '#f59e0b' },
+              { l: 'Necesitas/mes', v: `${monthlyNeeded} ${unit}`, c: onTrack ? 'var(--text-secondary)' : '#f59e0b' },
             ].map(({ l, v, c }) => (
               <div key={l} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '6px', padding: '0.35rem 0.5rem' }}>
                 <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{l}</p>
@@ -105,16 +105,16 @@ const GoalCard = ({ title, emoji, total, goal, outdoor, indoor, projected, kmNee
             ))}
           </div>
 
-          {/* Desglose Outdoor / Indoor para ciclismo */}
-          {(outdoor !== undefined) && (
+          {/* Desglose de sub-valores */}
+          {(val1 !== undefined) && (
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.1rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: color }} />
-                Exterior: <strong style={{ color }}>{outdoor.toLocaleString()} km</strong>
+                {label1}: <strong style={{ color }}>{val1.toLocaleString()} {unit}</strong>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }} />
-                Indoor: <strong style={{ color: '#f59e0b' }}>{indoor.toLocaleString()} km</strong>
+                {label2}: <strong style={{ color: '#f59e0b' }}>{val2.toLocaleString()} {unit}</strong>
               </div>
             </div>
           )}
@@ -160,8 +160,8 @@ const AnnualGoalProgress = ({ data }) => {
           emoji="🚴"
           total={totals.cycling}
           goal={goals.cycling}
-          outdoor={totals.cyclingOutdoor}
-          indoor={totals.cyclingIndoor}
+          val1={totals.cyclingOutdoor}
+          val2={totals.cyclingIndoor}
           projected={projected.cycling}
           kmNeeded={kmNeeded.cycling}
           monthsRemaining={monthsRemaining}
@@ -176,6 +176,21 @@ const AnnualGoalProgress = ({ data }) => {
           kmNeeded={kmNeeded.running}
           monthsRemaining={monthsRemaining}
           color="var(--health-green)"
+        />
+        <GoalCard
+          title="Desnivel Total"
+          emoji="🏔️"
+          total={totals.totalElevation}
+          goal={goals.cyclingElevation + goals.runningElevation}
+          val1={totals.cyclingElevation}
+          val2={totals.runningElevation}
+          label1="Bici"
+          label2="Running"
+          projected={projected.cyclingElevation + projected.runningElevation}
+          kmNeeded={kmNeeded.cyclingElevation + kmNeeded.runningElevation}
+          monthsRemaining={monthsRemaining}
+          color="var(--health-cyan)"
+          unit="m"
         />
       </div>
 

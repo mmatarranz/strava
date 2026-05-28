@@ -207,3 +207,115 @@ h1, h2, h3, h4 {
   }
 }
 
+/* --- TABS Y SECCIONES PREMIUM DE NAVEGACIÓN --- */
+
+.tab-navigation {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 0.35rem;
+  margin-bottom: 2rem;
+  width: fit-content;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.tab-item {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.tab-item:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tab-item.active {
+  color: white;
+  background: linear-gradient(135deg, var(--strava-orange), #ff7b47);
+  box-shadow: 0 4px 12px rgba(252, 76, 2, 0.25);
+}
+
+.tab-item.active.health-tab-active {
+  background: linear-gradient(135deg, var(--health-cyan), #38bdf8);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
+}
+
+.tab-item.active.goals-tab-active {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.tab-pane {
+  animation: fadeInTab 0.4s ease-out forwards;
+}
+
+@keyframes fadeInTab {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- REJILLA PARA PESTAÑA DE FISIOLOGÍA Y SALUD --- */
+.health-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+}
+
+.health-span-two {
+  grid-column: span 2;
+}
+
+.health-span-full {
+  grid-column: 1 / -1;
+}
+
+/* Rejilla interna para desglosar HealthSidebar en tarjetas separadas */
+.health-sidebar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .health-tab-grid {
+    grid-template-columns: 1fr;
+  }
+  .health-span-two, .health-span-full {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .tab-navigation {
+    width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  
+  .tab-item {
+    padding: 0.5rem 0.8rem;
+    font-size: 0.8rem;
+  }
+}
+
+

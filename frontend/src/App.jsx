@@ -43,7 +43,7 @@ function App() {
   const [loading,       setLoading]       = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isWithingsAuthenticated, setIsWithingsAuthenticated] = useState(false);
-  const [errorMsg,      setErrorMsg]      = useState(null);
+  const [activeTab, setActiveTab] = useState('rendimiento');
 
   const fetchAll = async () => {
     try {
@@ -148,63 +148,81 @@ function App() {
       {activities.length === 0 ? (
         <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>No se encontraron actividades en tu cuenta.</div>
       ) : (
-        <div className="dashboard-grid">
-          {/* OBJETIVOS ANUALES — encima de todo, span completo */}
-          <div style={{ gridColumn: '1 / -1' }}>
-            <AnnualGoalProgress data={annualData} />
-          </div>
-
-          {/* HEADER KPIs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          
+          {/* HEADER KPIs (Siempre visible en la cabecera para control general) */}
           <Header activities={activities} />
 
-          {/* COLUMNA PRINCIPAL */}
-          <div className="dashboard-main">
-            {/* Análisis de Entrenamiento */}
-            <LastActivity activities={activities} />
-
-            {/* Diagnóstico Fisiológico IA */}
-            <AIReportCard />
-
-            {/* Módulo 2: Metas semanales */}
-            <WeeklyGoals goals={goalsData} onSave={handleSaveGoals} />
-
-            {/* Módulo 1: Forma Atlética ATL/CTL/TSB */}
-            <FitnessChart data={fitnessData} />
-
-            {/* Módulo Intervals.icu: Eficiencia Aeróbica y Distribución de Intensidad */}
-            <AerobicEfficiency data={recoveryData} />
-
-            {/* Desglose Diario / Mensual / Anual */}
-            <ActivityBreakdown stats={stats} />
-
-            {/* Módulo 3: Evolución de rendimiento */}
-            <PerformanceEvolution data={perfData} />
-
-            {/* Módulo 4: Radar de equilibrio */}
-            <SportRadar stats={stats} />
-
-            {/* Módulo Histórico: Años anteriores */}
-            <HistoricalStats data={historyData} />
-
-            {/* Módulo 6: Calendario mensual */}
-            <TrainingCalendar activities={activities} />
-
-            {/* Gráfico de áreas apiladas y burbujas originales */}
-            <MainChart activities={activities} />
-            <IntensityChart activities={activities} />
+          {/* NAVEGACIÓN TEMÁTICA DE PESTAÑAS (TABS SELECTOR) */}
+          <div className="tab-navigation">
+            <button 
+              onClick={() => setActiveTab('rendimiento')} 
+              className={`tab-item ${activeTab === 'rendimiento' ? 'active' : ''}`}
+            >
+              📊 Rendimiento y Carga
+            </button>
+            <button 
+              onClick={() => setActiveTab('salud')} 
+              className={`tab-item ${activeTab === 'salud' ? 'active health-tab-active' : ''}`}
+            >
+              🩺 Fisiología y Salud
+            </button>
+            <button 
+              onClick={() => setActiveTab('objetivos')} 
+              className={`tab-item ${activeTab === 'objetivos' ? 'active goals-tab-active' : ''}`}
+            >
+              📅 Objetivos y Agenda
+            </button>
           </div>
 
-          {/* SIDEBAR DERECHO */}
-          <div className="dashboard-sidebar">
-            {/* Predisposición Diaria (Readiness) */}
-            <TrainingReadiness data={recoveryData} />
+          {/* RENDERIZADO CONDICIONAL DE PESTAÑAS */}
+          
+          {/* PESTAÑA 1: RENDIMIENTO Y CARGA */}
+          {activeTab === 'rendimiento' && (
+            <div className="tab-pane dashboard-main">
+              <LastActivity activities={activities} />
+              <FitnessChart data={fitnessData} />
+              <AerobicEfficiency data={recoveryData} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+                <PerformanceEvolution data={perfData} />
+                <SportRadar stats={stats} />
+              </div>
+              <MainChart activities={activities} />
+              <IntensityChart activities={activities} />
+            </div>
+          )}
 
-            {/* Módulo 5: Recuperación */}
-            <RecoveryPanel data={recoveryData} />
+          {/* PESTAÑA 2: FISIOLOGÍA Y SALUD */}
+          {activeTab === 'salud' && (
+            <div className="tab-pane health-tab-grid">
+              <div className="health-span-two">
+                <TrainingReadiness data={recoveryData} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <AIReportCard />
+                <RecoveryPanel data={recoveryData} />
+              </div>
+              <div className="health-span-full">
+                <HealthSidebar healthData={healthData} sleepData={recoveryData?.sleepData} rhrData={recoveryData?.rhrData} isGridLayout={true} />
+              </div>
+            </div>
+          )}
 
-            {/* Salud */}
-            <HealthSidebar healthData={healthData} sleepData={recoveryData?.sleepData} rhrData={recoveryData?.rhrData} />
-          </div>
+          {/* PESTAÑA 3: OBJETIVOS Y AGENDA */}
+          {activeTab === 'objetivos' && (
+            <div className="tab-pane dashboard-main">
+              <AnnualGoalProgress data={annualData} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+                <WeeklyGoals goals={goalsData} onSave={handleSaveGoals} />
+                <TrainingCalendar activities={activities} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+                <ActivityBreakdown stats={stats} />
+                <HistoricalStats data={historyData} />
+              </div>
+            </div>
+          )}
+
         </div>
       )}
       {/* Asistente Deportivo IA Flotante */}

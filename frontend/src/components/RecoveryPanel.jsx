@@ -64,20 +64,21 @@ const RecoveryPanel = ({ data }) => {
       </div>
 
       {/* KPIs DE RECUPERACIÓN */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
         {[
           { label: 'Sueño (Withings)', value: `${sleepData?.currentScore || 78}`, color: 'var(--health-cyan)', unit: '%' },
           { label: 'RHR Reposo', value: `${rhrData?.current || 55}`, color: 'var(--chart-indoor)', unit: 'ppm' },
+          { label: 'Respiración', value: `${sleepData?.breathingRate?.current || 13.2}`, color: 'var(--health-green)', unit: 'rpm' },
           { label: 'Racha Activa', value: streak, color: streakColor, unit: 'd' },
         ].map(({ label, value, color, unit }) => (
           <div key={label} style={{
             background: 'rgba(255,255,255,0.04)', borderRadius: '10px',
-            padding: '0.65rem 0.4rem', textAlign: 'center', border: `1px solid ${color}22`
+            padding: '0.65rem 0.2rem', textAlign: 'center', border: `1px solid ${color}22`
           }}>
-            <p style={{ fontSize: '1.35rem', fontWeight: 800, color }}>
-              {value}<span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{unit}</span>
+            <p style={{ fontSize: '1.2rem', fontWeight: 800, color }}>
+              {value}<span style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>{unit}</span>
             </p>
-            <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.1' }}>{label}</p>
+            <p style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: '1.1' }}>{label}</p>
           </div>
         ))}
       </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Timer, TrendingUp, TrendingDown } from 'lucide-react';
+import { Activity, Timer, TrendingUp, TrendingDown, Mountain } from 'lucide-react';
 
 const Header = ({ activities }) => {
   // Mock logic to calculate current week vs last week volume
@@ -16,6 +16,9 @@ const Header = ({ activities }) => {
   // Group by category to show some stats
   const enduranceTime = activities.filter(a => a.category === 'Endurance').reduce((acc, curr) => acc + curr.moving_time, 0) / 3600;
   const indoorTime = activities.filter(a => a.category === 'Indoor/Gym').reduce((acc, curr) => acc + curr.moving_time, 0) / 3600;
+
+  // New: total elevation gain from activities
+  const totalElevation = Math.round(activities.reduce((acc, curr) => acc + (curr.total_elevation_gain || 0), 0));
 
   return (
     <div className="dashboard-header">
@@ -42,6 +45,17 @@ const Header = ({ activities }) => {
           {enduranceTime.toFixed(1)} <span className="text-sm text-muted">hrs</span>
         </div>
         <div className="text-muted text-sm">Carrera, Ciclismo, Caminata</div>
+      </div>
+
+      <div className="glass-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 className="text-muted text-sm">Desnivel Acumulado</h3>
+          <Mountain size={20} color="#10b981" />
+        </div>
+        <div className="text-3xl" style={{ marginBottom: '0.5rem' }}>
+          {totalElevation.toLocaleString('es-ES')} <span className="text-sm text-muted">m</span>
+        </div>
+        <div className="text-muted text-sm">Ascenso total en sesiones recientes</div>
       </div>
 
       <div className="glass-panel">

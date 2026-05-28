@@ -1,11 +1,11 @@
 import React from 'react';
-import { Droplet, Scale, ActivitySquare, TrendingDown, TrendingUp, Moon, Heart, Footprints, HeartPulse, Dumbbell } from 'lucide-react';
+import { Droplet, Scale, ActivitySquare, TrendingDown, TrendingUp, Moon, Heart, Footprints, HeartPulse, Dumbbell, Wind, Activity } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 
-const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
+const HealthSidebar = ({ healthData, sleepData, rhrData, isGridLayout }) => {
   if (!healthData || healthData.error) return <div className="dashboard-sidebar">Cargando biometría...</div>;
 
-  const { weight, bodyFat, hydration, activity, composition, cardio, withingsConnected } = healthData;
+  const { weight, bodyFat, hydration, activity, composition, cardio, bloodPressure, withingsConnected } = healthData;
 
   const weightTrend = weight.current < weight.previous ? 'down' : 'up';
   const fatTrend = bodyFat.current < bodyFat.previous ? 'down' : 'up';
@@ -40,8 +40,38 @@ const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
   const stepsPct = (stepsData.currentSteps / stepsData.stepsGoal) * 100;
   const stepsChartData = stepsData.history.map((s, i) => ({ day: i, steps: s }));
 
+  // NEW: Blood Pressure Data (Withings)
+  const bpData = bloodPressure || {
+    systolic: { current: 115, previous: 118, history: [118, 117, 116, 115, 115] },
+    diastolic: { current: 75, previous: 77, history: [78, 77, 76, 75, 75] }
+  };
+  const bpSystolicTrend = bpData.systolic.current <= bpData.systolic.previous ? 'down' : 'up';
+  const bpDiastolicTrend = bpData.diastolic.current <= bpData.diastolic.previous ? 'down' : 'up';
+  
+  const getBpStatus = (sys, dia) => {
+    if (sys < 120 && dia < 80) return { label: 'Óptima ✓', color: 'var(--health-green)', desc: 'Presión arterial en rango ideal de salud.' };
+    if (sys < 130 && dia < 85) return { label: 'Normal 🟢', color: '#84cc16', desc: 'Rango saludable de presión arterial.' };
+    return { label: 'Elevada ⚠️', color: '#f59e0b', desc: 'Presión arterial ligeramente alta. Vigilar fatiga.' };
+  };
+  const bpStatus = getBpStatus(bpData.systolic.current, bpData.diastolic.current);
+  const bpChartData = bpData.systolic.history.map((sys, i) => ({
+    day: i,
+    systolic: sys,
+    diastolic: bpData.diastolic.history[i] || 75
+  }));
+
+  // NEW: Sleep Breathing Rate Data (Withings Sleep)
+  const breathingData = sleepData?.breathingRate || {
+    current: 13.2,
+    average: 13.4,
+    history: [13.4, 13.6, 13.2, 13.5, 13.8, 13.1, 13.3, 13.5, 13.7, 13.2, 13.4, 13.6, 13.3, 13.5, 13.4, 13.6, 13.2, 13.5, 13.8, 13.1, 13.3, 13.5, 13.7, 13.2, 13.4, 13.6, 13.3, 13.2]
+  };
+  const breathingChartData = breathingData.history.map((b, i) => ({ day: i, breathing: b }));
+
+  const containerClass = isGridLayout ? "health-sidebar-grid" : "dashboard-sidebar";
+
   return (
-    <div className="dashboard-sidebar">
+    <div className={containerClass}>
       
       {/* 🩺 WEIGHT CARD */}
       <div className="glass-panel">
@@ -122,6 +152,77 @@ const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
           </span>
         </div>
         <div className="text-xs text-muted">FCR Media: {rhrData?.average || 55} ppm</div>
+      </div>
+
+      {/* 💓 NEW: CARDIOVASCULAR BLOOD PRESSURE CARD */}
+      <div className="glass-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 className="text-muted text-sm text-gradient-health" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <HeartPulse size={16} /> Presión Arterial
+          </h3>
+          {withingsConnected && <span style={{ fontSize: '0.65rem', background: 'rgba(6,182,212,0.15)', color: 'var(--health-cyan)', padding: '2px 6px', borderRadius: '4px' }}>BPM Connect</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <span className="text-3xl" style={{ fontWeight: 700 }}>
+            {bpData.systolic.current}<span className="text-muted" style={{ fontSize: '1.2rem', fontWeight: 400 }}>/{bpData.diastolic.current}</span> <span className="text-sm text-muted">mmHg</span>
+          </span>
+          <span style={{ fontSize: '0.7rem', color: bpStatus.color, fontWeight: 700 }}>
+            {bpStatus.label}
+          </span>
+        </div>
+        <div className="text-xs text-muted" style={{ marginBottom: '0.6rem' }}>
+          Tendencia: {bpData.systolic.current <= bpData.systolic.previous ? '📉 Sistólica estable' : '📈 Sistólica elevada'}
+        </div>
+        
+        <div style={{ height: '40px', width: '100%' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={bpChartData}>
+              <YAxis domain={['dataMin - 10', 'dataMax + 10']} hide />
+              <Tooltip 
+                contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', border: '1px solid var(--glass-border)', borderRadius: '6px', padding: '6px' }}
+                itemStyle={{ color: 'var(--health-cyan)', fontSize: '10px' }}
+                labelStyle={{ display: 'none' }}
+              />
+              <Line type="monotone" dataKey="systolic" stroke="var(--health-cyan)" strokeWidth={1.5} dot={false} name="Sistólica" />
+              <Line type="monotone" dataKey="diastolic" stroke="#38bdf8" strokeWidth={1.2} strokeDasharray="3 3" dot={false} name="Diastólica" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* 🌬️ NEW: NIGHTTIME BREATHING RATE CARD */}
+      <div className="glass-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 className="text-muted text-sm text-gradient-health" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Wind size={16} /> Frecuencia Respiratoria
+          </h3>
+          {withingsConnected && <span style={{ fontSize: '0.65rem', background: 'rgba(6,182,212,0.15)', color: 'var(--health-cyan)', padding: '2px 6px', borderRadius: '4px' }}>Sleep</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <span className="text-3xl" style={{ fontWeight: 700 }}>
+            {breathingData.current} <span className="text-sm text-muted">rpm</span>
+          </span>
+          <span className="text-xs text-muted" style={{ color: breathingData.current >= 12 && breathingData.current <= 16 ? 'var(--health-green)' : '#f59e0b', fontSize: '0.7rem', fontWeight: 600 }}>
+            {breathingData.current >= 12 && breathingData.current <= 16 ? '✓ Fisiología Estable' : '⚠️ Ritmo Alterado'}
+          </span>
+        </div>
+        <div className="text-xs text-muted" style={{ marginBottom: '0.6rem' }}>
+          Promedio nocturno: {breathingData.average} rpm
+        </div>
+
+        <div style={{ height: '40px', width: '100%' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={breathingChartData}>
+              <YAxis domain={['dataMin - 1', 'dataMax + 1']} hide />
+              <Tooltip 
+                contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', border: '1px solid var(--glass-border)', borderRadius: '6px', padding: '6px' }}
+                itemStyle={{ color: 'var(--health-green)', fontSize: '11px' }}
+                labelStyle={{ display: 'none' }}
+              />
+              <Line type="monotone" dataKey="breathing" stroke="#34d399" strokeWidth={1.5} dot={{ r: 1 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* 🚶 PASOS DIARIOS CARD */}
@@ -207,7 +308,7 @@ const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
       <div className="glass-panel">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <h3 className="text-muted text-sm text-gradient-health" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <HeartPulse size={16} /> Composición & Cardio
+            <Activity size={16} /> Composición & Cardio
           </h3>
           {withingsConnected && <span style={{ fontSize: '0.65rem', background: 'rgba(6,182,212,0.15)', color: 'var(--health-cyan)', padding: '2px 6px', borderRadius: '4px' }}>Clínico</span>}
         </div>
