@@ -151,9 +151,6 @@ function App() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           
-          {/* HEADER KPIs (Siempre visible en la cabecera para control general) */}
-          <Header activities={activities} />
-
           {/* NAVEGACIÓN TEMÁTICA DE PESTAÑAS (TABS SELECTOR) */}
           <div className="tab-navigation">
             <button 
@@ -224,6 +221,9 @@ function App() {
               </div>
             </div>
           )}
+
+          {/* HEADER KPIs (Movido a la parte inferior como barra de resumen global) */}
+          <Header activities={activities} />
 
         </div>
       )}
