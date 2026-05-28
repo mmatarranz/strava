@@ -25,9 +25,23 @@ async function apiFetch(path) {
   console.log(`[API] Fetching ${path}...`);
   const res = await fetch(`${API_URL}${path}`);
   if (res.status === 401) throw new Error('NO_AUTH');
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Server returned status ${res.status}`);
+  }
   const data = await res.json();
   console.log(`[API] ${path} returned`, data);
   return data;
+}
+
+async function fetchSafe(path, fallback) {
+  try {
+    return await apiFetch(path);
+  } catch (e) {
+    if (e.message === 'NO_AUTH') throw e;
+    console.warn(`[SafeFetch] Failed to fetch ${path}, using fallback:`, e.message);
+    return fallback;
+  }
 }
 
 function App() {
@@ -52,33 +66,33 @@ function App() {
       if (!statusData.authenticated) { setIsAuthenticated(false); setLoading(false); return; }
       setIsAuthenticated(true);
 
-      // Lanzar todas las peticiones en paralelo
+      // Lanzar todas las peticiones en paralelo de forma segura con fallbacks
       const [withingsStatus, acts, health, statsRes, fitness, goals, perf, recovery, annual, history] = await Promise.all([
-        apiFetch('/withings/auth/status'),
-        apiFetch('/activities'),
-        apiFetch('/health'),
-        apiFetch('/stats'),
-        apiFetch('/fitness'),
-        apiFetch('/goals'),
-        apiFetch('/performance'),
-        apiFetch('/recovery'),
-        apiFetch('/annual-progress'),
-        apiFetch('/history'),
+        fetchSafe('/withings/auth/status', { authenticated: false }),
+        fetchSafe('/activities', []),
+        fetchSafe('/health', null),
+        fetchSafe('/stats', null),
+        fetchSafe('/fitness', []),
+        fetchSafe('/goals', null),
+        fetchSafe('/performance', null),
+        fetchSafe('/recovery', null),
+        fetchSafe('/annual-progress', null),
+        fetchSafe('/history', []),
       ]);
 
       setIsWithingsAuthenticated(withingsStatus.authenticated);
-      setActivities(acts);
+      setActivities(Array.isArray(acts) ? acts : []);
       setHealthData(health);
       setStats(statsRes);
-      setFitnessData(fitness);
+      setFitnessData(Array.isArray(fitness) ? fitness : []);
       setGoalsData(goals);
       setPerfData(perf);
       setRecoveryData(recovery);
       setAnnualData(annual);
-      setHistoryData(history);
+      setHistoryData(Array.isArray(history) ? history : []);
     } catch (error) {
       if (error.message === 'NO_AUTH') { setIsAuthenticated(false); }
-      else { setErrorMsg('Error conectando con el servidor backend en :3000'); }
+      else { setErrorMsg('Error de conexión o autenticación: ' + error.message); }
     } finally { setLoading(false); }
   };
 

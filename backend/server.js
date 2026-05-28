@@ -272,56 +272,127 @@ function getCached(key) {
 }
 function setCache(key, data) { CACHE[key] = { data, ts: Date.now() }; }
 
+const ACTIVITIES_FILE = path.join(__dirname, 'activities.json');
+
+function loadActivitiesFromFile() {
+    if (fs.existsSync(ACTIVITIES_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(ACTIVITIES_FILE, 'utf8'));
+        } catch (e) {
+            console.error("Error reading activities.json, resetting cache", e);
+            return [];
+        }
+    }
+    return [];
+}
+
+function saveActivitiesToFile(acts) {
+    try {
+        fs.writeFileSync(ACTIVITIES_FILE, JSON.stringify(acts, null, 2));
+    } catch (e) {
+        console.error("Error writing activities.json", e);
+    }
+}
+
 function findCachedActivity(id) {
     const numId = Number(id);
+    const cachedActs = loadActivitiesFromFile();
+    const found = cachedActs.find(a => Number(a.id) === numId);
+    if (found) return found;
+
     for (const key in CACHE) {
         if (key.startsWith('acts_') && Array.isArray(CACHE[key].data)) {
-            const found = CACHE[key].data.find(a => Number(a.id) === numId);
-            if (found) return found;
+            const foundInMem = CACHE[key].data.find(a => Number(a.id) === numId);
+            if (foundInMem) return foundInMem;
         }
     }
     return null;
 }
 
-// Trae actividades paginadas con caché compartida — petición SECUENCIAL
-// Trae actividades paginadas con caché compartida — petición SECUENCIAL (MÁS RECIENTES PRIMERO)
-async function fetchAllActivities(token, pages = 8, afterTimestamp = null) {
-    const cacheKey = `acts_${pages}_${afterTimestamp || 'all'}`;
-    const cached = getCached(cacheKey);
-    if (cached) { console.log(`[cache hit] ${cacheKey}`); return cached; }
+let activeSyncPromise = null;
 
+async function syncActivities(token) {
+    const cachedActs = loadActivitiesFromFile();
+    const cachedIds = new Set(cachedActs.map(a => Number(a.id)));
+    
+    const newActs = [];
     let rateLimited = false;
-    const all = [];
-    for (let i = 1; i <= pages; i++) {
-        // NO usamos 'after' en la URL para que Strava devuelva las más recientes primero (orden por defecto)
+    
+    // Si la caché está vacía, cargamos hasta 15 páginas inicialmente para poblar el dashboard sin exceder el rate limit.
+    // Si ya tiene datos, buscamos como máximo en 5 páginas (250 actividades) para detectar actividades nuevas.
+    const maxPages = cachedActs.length === 0 ? 15 : 5;
+    
+    console.log(`[Sync] Iniciando sincronización incremental. Actividades en caché: ${cachedActs.length}`);
+    
+    for (let i = 1; i <= maxPages; i++) {
         let url = `https://www.strava.com/api/v3/athlete/activities?per_page=50&page=${i}`;
         try {
+            console.log(`[Sync] Solicitando página ${i} de actividades a Strava...`);
             const r = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
             const data = r.data || [];
             
-            // Si usamos afterTimestamp, filtramos aquí
-            if (afterTimestamp) {
-                const filtered = data.filter(act => Math.floor(new Date(act.start_date).getTime() / 1000) >= afterTimestamp);
-                all.push(...filtered);
-                // Si en esta página ya hay actividades anteriores al timestamp, no hace falta pedir más páginas
-                if (filtered.length < data.length) break;
-            } else {
-                all.push(...data);
+            if (data.length === 0) break;
+            
+            let foundExisting = false;
+            for (const act of data) {
+                if (cachedIds.has(Number(act.id))) {
+                    foundExisting = true;
+                } else {
+                    newActs.push(act);
+                }
             }
             
-            if (data.length < 50) break; 
+            if (foundExisting) {
+                console.log(`[Sync] Se detectaron actividades existentes en la página ${i}. Parando sincronización.`);
+                break;
+            }
+            
+            if (data.length < 50) break;
         } catch (e) {
             if (e.response?.status === 429) {
-                console.warn(`Rate limit en página ${i}, usando ${all.length} actividades (las más recientes)`);
+                console.warn(`[Sync] Rate limit alcanzado en la página ${i} de Strava.`);
                 rateLimited = true;
                 break;
             }
             throw e;
         }
     }
-    if (all.length > 0 || !rateLimited) {
-        setCache(cacheKey, all);
+    
+    if (newActs.length > 0) {
+        const combined = [...newActs, ...cachedActs];
+        // Ordenar por fecha de más reciente a más antigua
+        combined.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+        saveActivitiesToFile(combined);
+        console.log(`[Sync] Sincronización exitosa. Se agregaron ${newActs.length} actividades nuevas. Total en caché: ${combined.length}`);
+        return combined;
+    } else {
+        console.log(`[Sync] Sincronización al día. No se detectaron nuevas actividades. Total: ${cachedActs.length}`);
+        return cachedActs;
     }
+}
+
+// Trae actividades paginadas con caché compartida de archivo y sincronización única segura
+async function fetchAllActivities(token, pages = 8, afterTimestamp = null) {
+    if (!activeSyncPromise) {
+        activeSyncPromise = syncActivities(token)
+            .finally(() => {
+                activeSyncPromise = null;
+            });
+    }
+    
+    let all = [];
+    try {
+        all = await activeSyncPromise;
+    } catch (e) {
+        console.error("[fetchAllActivities] Error durante la sincronización, usando caché local como fallback:", e.message);
+        all = loadActivitiesFromFile();
+    }
+    
+    // Filtrar por timestamp de inicio si es requerido (p. ej., inicio del año)
+    if (afterTimestamp) {
+        return all.filter(act => Math.floor(new Date(act.start_date).getTime() / 1000) >= afterTimestamp);
+    }
+    
     return all;
 }
 
@@ -384,10 +455,8 @@ app.get('/api/debug/types', async (req, res) => {
 app.get('/api/activities', async (req, res) => {
     try {
         const token = await getValidAccessToken();
-        const stravaRes = await axios.get('https://www.strava.com/api/v3/athlete/activities?per_page=50', {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        res.json(stravaRes.data.map(processActivity));
+        const allActs = await fetchAllActivities(token);
+        res.json(allActs.slice(0, 50).map(processActivity));
     } catch (error) {
         if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') {
             res.status(401).json({ error: 'No autenticado con Strava' });

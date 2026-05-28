@@ -42,3 +42,4 @@ Thumbs.db
 backend/tokens.json
 backend/goals.json
 backend/.env
+backend/withings_tokens.json
