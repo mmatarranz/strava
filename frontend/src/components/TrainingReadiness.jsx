@@ -60,7 +60,7 @@ const TrainingReadiness = ({ data }) => {
             <Activity size={20} style={{ color: theme.color }} /> Predisposición Diaria
           </h2>
           <p className="text-muted text-xs">
-            {withingsConnected ? '⚡ Biometría activa sincronizada de Withings' : '🛌 Datos analizados (Simulados)'}
+            {withingsConnected ? '⚡ Biometría y actividad (pasos) activa de Withings' : '🛌 Datos analizados (Simulados)'}
           </p>
         </div>
 
@@ -311,7 +311,7 @@ const TrainingReadiness = ({ data }) => {
             background: 'rgba(252,76,2,0.05)', border: '1px solid rgba(252,76,2,0.15)', borderRadius: '8px',
             padding: '0.5rem 0.8rem', fontSize: '0.72rem', color: '#ffebee', lineHeight: 1.35
           }}>
-            🎯 <strong>Equilibrio del Atleta:</strong> Un Strain que supere ligeramente la barra de Recuperación optimiza la supercompensación. Evita días seguidos con Strain elevado si la recuperación está por debajo del 40% (rojo).
+            🎯 <strong>Equilibrio del Atleta (Strava + Withings):</strong> El Strain diario ahora combina cuadráticamente tus entrenamientos de Strava con tu actividad pasiva (pasos diarios NEAT de Withings). Un Strain que supere ligeramente la barra de Recuperación optimiza la supercompensación, pero vigila la fatiga no deportiva si caminas mucho.
           </div>
         </div>
       )}

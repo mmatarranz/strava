@@ -1,11 +1,11 @@
 import React from 'react';
-import { Droplet, Scale, ActivitySquare, TrendingDown, TrendingUp, Moon, Heart } from 'lucide-react';
+import { Droplet, Scale, ActivitySquare, TrendingDown, TrendingUp, Moon, Heart, Footprints } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from 'recharts';
 
 const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
   if (!healthData || healthData.error) return <div className="dashboard-sidebar">Cargando biometría...</div>;
 
-  const { weight, bodyFat, hydration, withingsConnected } = healthData;
+  const { weight, bodyFat, hydration, activity, withingsConnected } = healthData;
 
   const weightTrend = weight.current < weight.previous ? 'down' : 'up';
   const fatTrend = bodyFat.current < bodyFat.previous ? 'down' : 'up';
@@ -22,6 +22,20 @@ const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
   // RHR details (Withings)
   const currentRhr = rhrData?.current || 55;
   const rhrTrend = currentRhr < (rhrData?.average || 56) ? 'down' : 'up';
+
+  // Steps details (Withings)
+  const stepsData = activity || {
+    currentSteps: 8450,
+    stepsGoal: 10000,
+    previousSteps: 7800,
+    history: [6200, 11500, 8450, 7800, 9100, 8000, 8450],
+    activeCalories: 350,
+    activeDurationFormated: "01:15:00"
+  };
+
+  const stepsTrend = stepsData.currentSteps >= stepsData.previousSteps ? 'up' : 'down';
+  const stepsPct = (stepsData.currentSteps / stepsData.stepsGoal) * 100;
+  const stepsChartData = stepsData.history.map((s, i) => ({ day: i, steps: s }));
 
   return (
     <div className="dashboard-sidebar">
@@ -105,6 +119,54 @@ const HealthSidebar = ({ healthData, sleepData, rhrData }) => {
           </span>
         </div>
         <div className="text-xs text-muted">FCR Media: {rhrData?.average || 55} ppm</div>
+      </div>
+
+      {/* 🚶 PASOS DIARIOS CARD */}
+      <div className="glass-panel">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 className="text-muted text-sm text-gradient-health" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Footprints size={16} /> Pasos Diarios
+          </h3>
+          {withingsConnected && <span style={{ fontSize: '0.65rem', background: 'rgba(6,182,212,0.15)', color: 'var(--health-cyan)', padding: '2px 6px', borderRadius: '4px' }}>Withings</span>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <span className="text-3xl" style={{ fontWeight: 700 }}>{stepsData.currentSteps.toLocaleString('es-ES')} <span className="text-sm text-muted" style={{ fontSize: '0.75rem' }}>/ {stepsData.stepsGoal.toLocaleString('es-ES')}</span></span>
+          <span className={stepsTrend === 'up' ? 'trend-positive text-xs' : 'trend-up text-xs'} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', color: stepsTrend === 'up' ? 'var(--health-green)' : '#f59e0b', fontSize: '0.7rem' }}>
+            {stepsTrend === 'up' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            {Math.round(stepsPct)}%
+          </span>
+        </div>
+        
+        {/* Progress bar */}
+        <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden', marginBottom: '0.6rem', marginTop: '0.4rem' }}>
+          <div 
+            style={{ 
+              height: '100%', 
+              width: `${Math.min(stepsPct, 100)}%`, 
+              background: 'linear-gradient(90deg, #10b981, #00e5ff)',
+              transition: 'width 0.5s ease-in-out'
+            }} 
+          />
+        </div>
+
+        <div className="text-xs text-muted" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontWeight: 500 }}>
+          <span>🔥 {stepsData.activeCalories} kcal activas</span>
+          <span>⏱️ {stepsData.activeDurationFormated}</span>
+        </div>
+
+        <div style={{ height: '40px', width: '100%' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={stepsChartData}>
+              <YAxis domain={['dataMin - 500', 'dataMax + 500']} hide />
+              <Tooltip 
+                contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', border: '1px solid var(--glass-border)', borderRadius: '6px', padding: '6px' }}
+                itemStyle={{ color: 'var(--health-green)', fontSize: '11px' }}
+                labelStyle={{ display: 'none' }}
+              />
+              <Line type="monotone" dataKey="steps" stroke="#10b981" strokeWidth={1.5} dot={{ r: 1.5 }} activeDot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
       {/* 💧 HYDRATION CARD */}

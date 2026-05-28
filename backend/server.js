@@ -108,6 +108,34 @@ async function getWithingsValidAccessToken() {
     return tokens.access_token;
 }
 
+async function fetchWithingsActivity(accessToken, startdateymd, enddateymd) {
+    try {
+        console.log(`[Withings] Fetching activity from ${startdateymd} to ${enddateymd}...`);
+        const response = await axios.post('https://wbsapi.withings.net/v2/measure', 
+            new URLSearchParams({
+                action: 'getactivity',
+                startdateymd,
+                enddateymd
+            }).toString(),
+            {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            }
+        );
+        if (response.data && response.data.status === 0 && response.data.body) {
+            return response.data.body.activities || [];
+        } else {
+            console.warn("[Withings] Activity API non-zero status or empty body:", response.data);
+            return [];
+        }
+    } catch (e) {
+        console.error("[Withings] Error fetching activity:", e.response?.data || e.message);
+        return [];
+    }
+}
+
 // ---------------------------
 // AUTENTICACIÓN
 // ---------------------------
@@ -653,6 +681,45 @@ app.get('/api/health', async (req, res) => {
             const currentFat = fats[0] || 15.5;
             const prevFat = fats[1] || 16.0;
             
+            // Buscar actividad de Withings (últimos 7 días)
+            let activityData = {
+                currentSteps: 8450,
+                stepsGoal: 10000,
+                previousSteps: 7800,
+                history: [6200, 11500, 8450, 7800, 9100, 8000, 8450],
+                activeCalories: 350,
+                activeDurationFormated: "01:15:00"
+            };
+            
+            try {
+                const today = new Date();
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(today.getDate() - 7);
+                const startdateymd = sevenDaysAgo.toISOString().split('T')[0];
+                const enddateymd = today.toISOString().split('T')[0];
+                
+                const actsWithings = await fetchWithingsActivity(withingsToken, startdateymd, enddateymd);
+                if (actsWithings && actsWithings.length > 0) {
+                    actsWithings.sort((a, b) => a.date.localeCompare(b.date));
+                    const todayStr = today.toISOString().split('T')[0];
+                    const todayAct = actsWithings.find(a => a.date === todayStr) || actsWithings[actsWithings.length - 1];
+                    const prevAct = actsWithings.length > 1 ? actsWithings[actsWithings.length - 2] : null;
+                    
+                    const stepsHistory = actsWithings.map(a => a.steps || 0);
+                    
+                    activityData = {
+                        currentSteps: todayAct ? (todayAct.steps || 0) : 0,
+                        stepsGoal: 10000,
+                        previousSteps: prevAct ? (prevAct.steps || 0) : 0,
+                        history: stepsHistory.slice(-7),
+                        activeCalories: todayAct ? Math.round(todayAct.calories || 0) : 0,
+                        activeDurationFormated: todayAct ? secondsToHhMmSs(todayAct.active || 0) : "00:00:00"
+                    };
+                }
+            } catch (actError) {
+                console.error("[Withings] Error resolving activity data inside /api/health:", actError.message);
+            }
+
             res.json({
                 weight: {
                     current: currentWeight,
@@ -666,6 +733,7 @@ app.get('/api/health', async (req, res) => {
                     previous: prevFat
                 },
                 hydration: defaultHydration,
+                activity: activityData,
                 withingsConnected: true
             });
         } else {
@@ -678,6 +746,14 @@ app.get('/api/health', async (req, res) => {
             weight:    { current: 75.2, goal: 74.0, previous: 76.0, history: [76, 75.8, 75.5, 75.4, 75.2] },
             bodyFat:   { current: 15.5, goal: 14.0, previous: 16.0 },
             hydration: defaultHydration,
+            activity: {
+                currentSteps: 8450,
+                stepsGoal: 10000,
+                previousSteps: 7800,
+                history: [6200, 11500, 8450, 7800, 9100, 8000, 8450],
+                activeCalories: 350,
+                activeDurationFormated: "01:15:00"
+            },
             withingsConnected: false
         });
     }
@@ -701,6 +777,7 @@ app.get('/api/fitness', async (req, res) => {
         // ----------------------------------------
         const sleepMap = {};
         const weightMap = {};
+        const stepsMap = {};
         let averageRhr = 55;
         let withingsConnected = false;
 
@@ -713,16 +790,19 @@ app.get('/api/fitness', async (req, res) => {
             const startdateymd = hundredEightyDaysAgo.toISOString().split('T')[0];
             const enddateymd = today.toISOString().split('T')[0];
 
-            console.log("[Withings-PMC] Fetching 180 days of sleep summaries...");
-            const sleepResponse = await axios.post('https://wbsapi.withings.net/v2/sleep', 
-                new URLSearchParams({ action: 'getsummary', startdateymd, enddateymd }).toString(),
-                {
-                    headers: {
-                        'Authorization': `Bearer ${withingsToken}`,
-                        'Content-Type': 'application/x-www-form-urlencoded'
+            console.log("[Withings-PMC] Fetching 180 days of sleep and activity summaries...");
+            const [sleepResponse, actsWithings] = await Promise.all([
+                axios.post('https://wbsapi.withings.net/v2/sleep', 
+                    new URLSearchParams({ action: 'getsummary', startdateymd, enddateymd }).toString(),
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${withingsToken}`,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
                     }
-                }
-            );
+                ),
+                fetchWithingsActivity(withingsToken, startdateymd, enddateymd)
+            ]);
 
             if (sleepResponse.data && sleepResponse.data.status === 0 && sleepResponse.data.body && sleepResponse.data.body.series) {
                 const series = sleepResponse.data.body.series;
@@ -738,6 +818,12 @@ app.get('/api/fitness', async (req, res) => {
                     };
                 });
                 withingsConnected = true;
+            }
+
+            if (actsWithings && actsWithings.length > 0) {
+                actsWithings.forEach(a => {
+                    stepsMap[a.date] = a.steps || 0;
+                });
             }
 
             console.log("[Withings-PMC] Fetching 180 days of weight measurements...");
@@ -813,7 +899,15 @@ app.get('/api/fitness', async (req, res) => {
                     const rhrDiff = currentRhr - averageRhr;
                     rhrScore = -rhrDiff * 2; // Multiplicador de penalización aprobado por el usuario
                 }
-                tsbPhysio = tsb + (sleepFactor * 15) + rhrScore;
+                
+                // Penalizar si los pasos de ese día superaron el nivel saludable de fatiga pasiva (>12,000 pasos)
+                const daySteps = stepsMap[dateStr] || 0;
+                let stepsFatigue = 0;
+                if (daySteps > 12000) {
+                    stepsFatigue = Math.min(10, (daySteps - 12000) / 1500); // Máximo 10 puntos de penalización en TSB
+                }
+                
+                tsbPhysio = tsb + (sleepFactor * 15) + rhrScore - stepsFatigue;
             }
 
             const acwr = ctl > 0 ? parseFloat((atl / ctl).toFixed(2)) : 0.0;
@@ -1005,11 +1099,12 @@ app.get('/api/recovery', async (req, res) => {
         });
 
         // ----------------------------------------
-        // INTEGRACIÓN BIOMÉTRICA DE WITHINGS (SUEÑO / FCR)
+        // INTEGRACIÓN BIOMÉTRICA DE WITHINGS (SUEÑO / FCR / PASOS)
         // ----------------------------------------
         let sleepData = null;
         let rhrData = null;
         let withingsConnected = false;
+        const stepsMap = {};
 
         // Arrays de 28 días para el histórico completo
         let sleepHistory28 = [];
@@ -1018,7 +1113,7 @@ app.get('/api/recovery', async (req, res) => {
 
         try {
             const withingsToken = await getWithingsValidAccessToken();
-            console.log("[Withings] Fetching 28 days of sleep summary data...");
+            console.log("[Withings] Fetching 28 days of sleep and activity summaries...");
             const today = new Date();
             const twentyEightDaysAgo = new Date();
             twentyEightDaysAgo.setDate(today.getDate() - 28);
@@ -1026,19 +1121,22 @@ app.get('/api/recovery', async (req, res) => {
             const startdateymd = twentyEightDaysAgo.toISOString().split('T')[0];
             const enddateymd = today.toISOString().split('T')[0];
 
-            const sleepResponse = await axios.post('https://wbsapi.withings.net/v2/sleep', 
-                new URLSearchParams({
-                    action: 'getsummary',
-                    startdateymd,
-                    enddateymd
-                }).toString(),
-                {
-                    headers: {
-                        'Authorization': `Bearer ${withingsToken}`,
-                        'Content-Type': 'application/x-www-form-urlencoded'
+            const [sleepResponse, actsWithings] = await Promise.all([
+                axios.post('https://wbsapi.withings.net/v2/sleep', 
+                    new URLSearchParams({
+                        action: 'getsummary',
+                        startdateymd,
+                        enddateymd
+                    }).toString(),
+                    {
+                        headers: {
+                            'Authorization': `Bearer ${withingsToken}`,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
                     }
-                }
-            );
+                ),
+                fetchWithingsActivity(withingsToken, startdateymd, enddateymd)
+            ]);
 
             if (sleepResponse.data && sleepResponse.data.status === 0 && sleepResponse.data.body && sleepResponse.data.body.series) {
                 const series = sleepResponse.data.body.series; // Orden descendente (los más recientes primero)
@@ -1072,8 +1170,14 @@ app.get('/api/recovery', async (req, res) => {
                 
                 withingsConnected = true;
             }
+
+            if (actsWithings && actsWithings.length > 0) {
+                actsWithings.forEach(a => {
+                    stepsMap[a.date] = a.steps || 0;
+                });
+            }
         } catch (e) {
-            console.log(`[Recovery] Withings sleep data not available or failed: ${e.message}`);
+            console.log(`[Recovery] Withings sleep/activity data not available or failed: ${e.message}`);
         }
 
         // Fallbacks biométricos realistas si no hay vinculación de Withings
@@ -1230,12 +1334,23 @@ app.get('/api/recovery', async (req, res) => {
             tsbScoreWeight = Math.round(100 + (currentTsb * 2.2));
         }
 
-        const readinessScore = Math.round(
+        // 5. Penalización por Fatiga Pasiva Acumulada (NEAT ayer)
+        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const yesterdaySteps = stepsMap[yesterdayStr] || (withingsConnected ? 0 : 8500); // 8500 default simulated
+        
+        let neatFatiguePenalty = 0;
+        if (yesterdaySteps > 15000) {
+            neatFatiguePenalty = Math.min(15, Math.round((yesterdaySteps - 15000) / 1000) * 1.5);
+        }
+
+        let readinessScore = Math.round(
             (sleepScoreWeight * 0.35) +
             (hrvScoreWeight * 0.25) +
             (rhrScoreWeight * 0.15) +
             (tsbScoreWeight * 0.25)
         );
+        readinessScore = Math.max(1, Math.min(100, readinessScore - neatFatiguePenalty));
 
         // ----------------------------------------
         // WHOOP STRAIN VS RECOVERY BALANCE HISTORY (7 DÍAS)
@@ -1253,14 +1368,25 @@ app.get('/api/recovery', async (req, res) => {
             const dayDurationMin = dayActs.reduce((s, a) => s + (a.moving_time / 60), 0);
             
             // 1. Escalar Strain del día de 0 a 21
-            let strain = 2.0; // Metabolismo basal del día
+            const daySteps = stepsMap[dateStr] || (withingsConnected ? 0 : Math.round(6000 + Math.random() * 6000));
+            let strain = 1.5; // Metabolismo basal base
+            
+            // Carga pasiva (NEAT) según pasos
+            if (daySteps > 0) {
+                strain += Math.min(6.0, parseFloat((daySteps / 3000).toFixed(1)));
+            }
+
             if (activeDay) {
-                if (daySuffer >= 80) strain = parseFloat((17 + Math.random() * 3).toFixed(1));
-                else if (daySuffer >= 40) strain = parseFloat((13 + Math.random() * 3.8).toFixed(1));
-                else if (daySuffer >= 15) strain = parseFloat((8 + Math.random() * 4.8).toFixed(1));
-                else strain = parseFloat((5 + Math.random() * 2.8).toFixed(1));
+                let workoutStrain = 0;
+                if (daySuffer >= 80) workoutStrain = 14 + Math.random() * 3;
+                else if (daySuffer >= 40) workoutStrain = 10 + Math.random() * 3;
+                else if (daySuffer >= 15) workoutStrain = 6 + Math.random() * 3;
+                else workoutStrain = 3 + Math.random() * 2;
+                
+                // Combinación cuadrática
+                strain = parseFloat(Math.min(21.0, Math.sqrt(strain * strain + workoutStrain * workoutStrain)).toFixed(1));
             } else {
-                strain = parseFloat((1.5 + Math.random() * 1.5).toFixed(1));
+                strain = parseFloat(strain.toFixed(1));
             }
 
             // 2. Escalar Recovery del día de 0 a 100
