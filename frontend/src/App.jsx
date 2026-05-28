@@ -193,16 +193,17 @@ function App() {
           {/* PESTAÑA 2: FISIOLOGÍA Y SALUD */}
           {activeTab === 'salud' && (
             <div className="tab-pane health-tab-grid">
-              {/* Columna Izquierda: 2/3 del ancho */}
+              {/* Columna Izquierda: 2/3 del ancho (Parte Central) */}
               <div className="health-span-two" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <AIReportCard />
                 <TrainingReadiness data={recoveryData} />
                 <RecoveryPanel data={recoveryData} />
                 <HealthSidebar healthData={healthData} sleepData={recoveryData?.sleepData} rhrData={recoveryData?.rhrData} isGridLayout={true} />
               </div>
               
-              {/* Columna Derecha: 1/3 del ancho */}
+              {/* Columna Derecha: 1/3 del ancho (Lateral) */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <AIReportCard />
+                <TrainingCalendar activities={activities} />
               </div>
             </div>
           )}
@@ -211,9 +212,8 @@ function App() {
           {activeTab === 'objetivos' && (
             <div className="tab-pane dashboard-main">
               <AnnualGoalProgress data={annualData} />
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
                 <WeeklyGoals goals={goalsData} onSave={handleSaveGoals} />
-                <TrainingCalendar activities={activities} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
                 <ActivityBreakdown stats={stats} />
