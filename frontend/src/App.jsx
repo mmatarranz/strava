@@ -44,6 +44,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isWithingsAuthenticated, setIsWithingsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('rendimiento');
+  const [errorMsg,      setErrorMsg]      = useState(null);
 
   const fetchAll = async () => {
     try {
