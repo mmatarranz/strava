@@ -196,15 +196,16 @@ function App() {
           {/* PESTAÑA 2: FISIOLOGÍA Y SALUD */}
           {activeTab === 'salud' && (
             <div className="tab-pane health-tab-grid">
-              <div className="health-span-two">
+              {/* Columna Izquierda: 2/3 del ancho */}
+              <div className="health-span-two" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 <TrainingReadiness data={recoveryData} />
+                <RecoveryPanel data={recoveryData} />
+                <HealthSidebar healthData={healthData} sleepData={recoveryData?.sleepData} rhrData={recoveryData?.rhrData} isGridLayout={true} />
               </div>
+              
+              {/* Columna Derecha: 1/3 del ancho */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 <AIReportCard />
-                <RecoveryPanel data={recoveryData} />
-              </div>
-              <div className="health-span-full">
-                <HealthSidebar healthData={healthData} sleepData={recoveryData?.sleepData} rhrData={recoveryData?.rhrData} isGridLayout={true} />
               </div>
             </div>
           )}
