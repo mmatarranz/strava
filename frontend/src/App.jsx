@@ -223,7 +223,7 @@ function App() {
           )}
 
           {/* HEADER KPIs (Movido a la parte inferior como barra de resumen global) */}
-          <Header activities={activities} />
+          {activeTab !== 'salud' && <Header activities={activities} />}
 
         </div>
       )}
