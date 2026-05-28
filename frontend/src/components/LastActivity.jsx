@@ -452,7 +452,7 @@ const LastActivity = ({ activities }) => {
               setLoadingAi(true);
               setErrorAi(null);
               const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
-              fetch(`${API_URL}/activities/${selectedId}/ai-analyze`, { method: 'POST' })
+              fetch(`${API_URL}/activities/${selectedId}/ai-analyze?force=true`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
                   if (data.analysis) {

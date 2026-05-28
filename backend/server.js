@@ -272,6 +272,17 @@ function getCached(key) {
 }
 function setCache(key, data) { CACHE[key] = { data, ts: Date.now() }; }
 
+function findCachedActivity(id) {
+    const numId = Number(id);
+    for (const key in CACHE) {
+        if (key.startsWith('acts_') && Array.isArray(CACHE[key].data)) {
+            const found = CACHE[key].data.find(a => Number(a.id) === numId);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
 // Trae actividades paginadas con caché compartida — petición SECUENCIAL
 // Trae actividades paginadas con caché compartida — petición SECUENCIAL (MÁS RECIENTES PRIMERO)
 async function fetchAllActivities(token, pages = 8, afterTimestamp = null) {
@@ -390,14 +401,38 @@ app.get('/api/activities', async (req, res) => {
 app.post('/api/activities/:id/ai-analyze', async (req, res) => {
     try {
         const { id } = req.params;
+        const force = req.query.force === 'true';
+        const cacheKey = `ai_analyze_${id}`;
+
+        // 0. Comprobar caché si no se fuerza la recarga
+        if (!force) {
+            const cached = getCached(cacheKey);
+            if (cached) {
+                console.log(`[cache hit] ai-analyze for activity ${id}`);
+                return res.json(cached);
+            }
+        }
+
         const token = await getValidAccessToken();
         
         // 1. Obtener detalles completos de la actividad desde la API de Strava
-        console.log(`[AI-Activity] Fetching details for activity ${id}...`);
-        const stravaRes = await axios.get(`https://www.strava.com/api/v3/activities/${id}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        const act = stravaRes.data;
+        let act = null;
+        try {
+            console.log(`[AI-Activity] Fetching details for activity ${id}...`);
+            const stravaRes = await axios.get(`https://www.strava.com/api/v3/activities/${id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            act = stravaRes.data;
+        } catch (stravaErr) {
+            console.warn(`[AI-Activity] Strava API detailed fetch failed for ${id}:`, stravaErr.message);
+            // Intentar buscar en las actividades ya cacheadas en memoria
+            act = findCachedActivity(id);
+            if (!act) {
+                // Si no está en caché de ninguna forma, relanzamos el error
+                throw stravaErr;
+            }
+            console.log(`[AI-Activity] Found basic activity details in cache for ${id}.`);
+        }
 
         // 2. Generar el reporte con Gemini
         let aiReport = "";
@@ -459,7 +494,11 @@ Mantén un tono riguroso, científico, alentador y personalizado para Miguel.`;
 * **Descanso:** Prioriza el sueño de calidad de al menos 7.5 horas con foco en fases de sueño profundo (recuperación muscular/hormonal).`;
         }
 
-        res.json({ analysis: aiReport });
+        // Guardar en la caché en memoria para futuras consultas rápidas
+        const responseData = { analysis: aiReport };
+        setCache(cacheKey, responseData);
+
+        res.json(responseData);
     } catch (error) {
         console.error("Error en /api/activities/ai-analyze:", error.message);
         res.status(500).json({ error: error.message });
