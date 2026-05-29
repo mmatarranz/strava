@@ -13,6 +13,7 @@ const PORT = 3000;
 const TOKENS_FILE          = path.join(__dirname, 'tokens.json');
 const WITHINGS_TOKENS_FILE = path.join(__dirname, 'withings_tokens.json');
 const AI_CACHE_FILE        = path.join(__dirname, 'ai_cache.json');
+const APPLE_HEALTH_FILE    = path.join(__dirname, 'apple_health.json');
 const ACTIVITIES_FILE      = path.join(__dirname, 'activities.json');
 const GOALS_FILE           = path.join(__dirname, 'goals.json');
 
@@ -246,6 +247,76 @@ async function fetchWithingsActivity(accessToken, startdateymd, enddateymd) {
         return [];
     }
 }
+
+// ---------------------------
+// GESTIÓN DE APPLE HEALTH (Persistencia local e historial con forward-fill)
+// ---------------------------
+function getAppleHealthHistory(daysBack = 30) {
+    let appleData = {};
+    try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
+    
+    const history = [];
+    const today = new Date();
+    for (let i = daysBack - 1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(today.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const entry = appleData[dateStr] || {};
+        history.push({
+            date: dateStr,
+            weight: entry.weight !== undefined && entry.weight !== null ? Number(entry.weight) : null,
+            bodyFat: entry.bodyFat !== undefined && entry.bodyFat !== null ? Number(entry.bodyFat) : null,
+            restingHeartRate: entry.restingHeartRate !== undefined && entry.restingHeartRate !== null ? Number(entry.restingHeartRate) : null,
+            hrv: entry.hrv !== undefined && entry.hrv !== null ? Number(entry.hrv) : null,
+            sleepDurationHours: entry.sleepDurationHours !== undefined && entry.sleepDurationHours !== null ? Number(entry.sleepDurationHours) : null,
+            sleepScore: entry.sleepScore !== undefined && entry.sleepScore !== null ? Number(entry.sleepScore) : null,
+            steps: entry.steps !== undefined && entry.steps !== null ? Number(entry.steps) : null,
+            activeCalories: entry.activeCalories !== undefined && entry.activeCalories !== null ? Number(entry.activeCalories) : null,
+            vo2max: entry.vo2max !== undefined && entry.vo2max !== null ? Number(entry.vo2max) : null,
+            systolic: entry.systolic !== undefined && entry.systolic !== null ? Number(entry.systolic) : null,
+            diastolic: entry.diastolic !== undefined && entry.diastolic !== null ? Number(entry.diastolic) : null,
+            waterMetricLiters: entry.waterMetricLiters !== undefined && entry.waterMetricLiters !== null ? Number(entry.waterMetricLiters) : null
+        });
+    }
+    return history;
+}
+
+function getFilledAppleHistory(daysBack = 30) {
+    const history = getAppleHealthHistory(daysBack);
+    
+    const keys = [
+        'weight', 'bodyFat', 'restingHeartRate', 'hrv', 'sleepDurationHours', 
+        'sleepScore', 'steps', 'activeCalories', 'vo2max', 'systolic', 'diastolic', 'waterMetricLiters'
+    ];
+    
+    const defaults = {
+        weight: 75.2, bodyFat: 15.5, restingHeartRate: 55, hrv: 58, sleepDurationHours: 7.2, sleepScore: 75,
+        steps: 8000, activeCalories: 300, vo2max: 48.0, systolic: 115, diastolic: 75, waterMetricLiters: 2.0
+    };
+    
+    let lastSeen = { ...defaults };
+    
+    // Inicializar backward-fill con el primer elemento no nulo disponible para cada clave
+    for (const key of keys) {
+        const firstNonNull = history.find(h => h[key] !== null);
+        if (firstNonNull) {
+            lastSeen[key] = firstNonNull[key];
+        }
+    }
+    
+    // Forward-fill a lo largo del historial
+    return history.map(h => {
+        const row = { date: h.date };
+        for (const key of keys) {
+            if (h[key] !== null) {
+                lastSeen[key] = h[key];
+            }
+            row[key] = lastSeen[key];
+        }
+        return row;
+    });
+}
+
 
 // ---------------------------
 // CACHÉ DE IA EN MEMORIA
@@ -951,10 +1022,121 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ---------------------------
+// ENDPOINT: RECEPCIÓN DE DATOS APPLE HEALTH (Atajos de iOS)
+// ---------------------------
+app.post('/api/health/apple', (req, res) => {
+    try {
+        const payload = req.body;
+        const dateStr = payload.date || new Date().toISOString().split('T')[0];
+        
+        let appleData = {};
+        try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
+        
+        // Limpiar y validar tipos de datos antes de guardar
+        const cleanEntry = {};
+        const fields = [
+            'weight', 'bodyFat', 'restingHeartRate', 'hrv', 'sleepDurationHours',
+            'sleepScore', 'steps', 'activeCalories', 'vo2max', 'systolic', 'diastolic', 'waterMetricLiters'
+        ];
+        
+        for (const f of fields) {
+            if (payload[f] !== undefined && payload[f] !== null && payload[f] !== '') {
+                cleanEntry[f] = Number(payload[f]);
+            }
+        }
+        
+        // Hacer merge con los datos que ya tuviéramos para ese mismo día (si existiera alguna métrica previa)
+        appleData[dateStr] = {
+            ...appleData[dateStr],
+            ...cleanEntry,
+            date: dateStr
+        };
+        
+        fs.writeFileSync(APPLE_HEALTH_FILE, JSON.stringify(appleData, null, 2));
+        console.log(`[Apple Health] Datos sincronizados y guardados para la fecha ${dateStr}:`, cleanEntry);
+        
+        res.json({ ok: true, message: `Apple Health data saved successfully for ${dateStr}` });
+    } catch (e) {
+        console.error('[Apple Health] Error al procesar la carga:', e.message);
+        res.status(500).json({ error: 'Error al procesar los datos de Apple Health' });
+    }
+});
+
+// ---------------------------
 // ENDPOINT: SALUD (Withings)
 // ---------------------------
 app.get('/api/health', async (req, res) => {
     const defaultHydration = { dailyGoal: 3.0, currentLiters: 2.2, previousLiters: 1.8, history: [2.0, 2.5, 1.8, 3.1, 2.2] };
+
+    let appleData = {};
+    try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
+    const appleHealthConnected = Object.keys(appleData).length > 0;
+
+    if (appleHealthConnected) {
+        console.log('[Apple Health] Generando métricas de salud utilizando base de datos local...');
+        const filled = getFilledAppleHistory(30);
+        const latest = filled[filled.length - 1];
+        const previous = filled[filled.length - 2] || latest;
+        
+        const weightHistory = filled.slice(-10).map(h => h.weight);
+        const currentWeight = latest.weight;
+        const prevWeight = previous.weight;
+        
+        const currentFat = latest.bodyFat;
+        const prevFat = previous.bodyFat;
+        
+        const currentSys = latest.systolic;
+        const prevSys = previous.systolic;
+        const sysHistory = filled.slice(-10).map(h => h.systolic);
+        
+        const currentDia = latest.diastolic;
+        const prevDia = previous.diastolic;
+        const diaHistory = filled.slice(-10).map(h => h.diastolic);
+        
+        const waterPct = parseFloat(((latest.waterMetricLiters / currentWeight) * 100).toFixed(1));
+        
+        const composition = { 
+            muscleMass: parseFloat((currentWeight * 0.8).toFixed(1)), // Estimación basada en peso si no hay báscula segmentada
+            boneMass: parseFloat((currentWeight * 0.04).toFixed(1)),
+            waterPct: waterPct || 56.4 
+        };
+        
+        const cardio = { 
+            pwv: 6.2, 
+            vascularAge: 28,
+            vo2max: latest.vo2max // Métrica real de Apple Watch
+        };
+        
+        const bloodPressure = {
+            systolic:  { current: currentSys,  previous: prevSys,  history: sysHistory },
+            diastolic: { current: currentDia,  previous: prevDia,  history: diaHistory }
+        };
+        
+        const stepsHistory = filled.slice(-7).map(h => h.steps);
+        const activityData = {
+            currentSteps: latest.steps,
+            stepsGoal: 10000,
+            previousSteps: previous.steps,
+            history: stepsHistory,
+            activeCalories: latest.activeCalories,
+            activeDurationFormated: '01:15:00' // Valor representativo
+        };
+        
+        const hydrationData = {
+            dailyGoal: 3.0,
+            currentLiters: latest.waterMetricLiters,
+            previousLiters: previous.waterMetricLiters,
+            history: filled.slice(-5).map(h => h.waterMetricLiters)
+        };
+        
+        return res.json({
+            weight: { current: currentWeight, goal: 74.0, previous: prevWeight, history: weightHistory },
+            bodyFat: { current: currentFat, goal: 14.0, previous: prevFat },
+            composition, cardio, bloodPressure,
+            hydration: hydrationData, activity: activityData,
+            withingsConnected: false, appleHealthConnected: true
+        });
+    }
 
     try {
         const withingsToken = await getWithingsValidAccessToken();
@@ -1079,38 +1261,56 @@ app.get('/api/fitness', async (req, res) => {
         let averageRhr       = 55;
         let withingsConnected = false;
 
-        try {
-            const withingsToken       = await getWithingsValidAccessToken();
-            const today               = new Date();
-            const hundredEightyDaysAgo = new Date(); hundredEightyDaysAgo.setDate(today.getDate() - 180);
-            const startdateymd        = hundredEightyDaysAgo.toISOString().split('T')[0];
-            const enddateymd          = today.toISOString().split('T')[0];
-            const startdate           = Math.floor(hundredEightyDaysAgo.getTime() / 1000);
-            const enddate             = Math.floor(today.getTime() / 1000);
+        let appleData = {};
+        try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
+        const appleHealthConnected = Object.keys(appleData).length > 0;
 
-            console.log('[Withings-PMC] Fetching 180 days of sleep, activity and weight...');
-            const [sleepSeries, actsWithings, measureGrps] = await Promise.all([
-                getCachedWithingsSleep(withingsToken, startdateymd, enddateymd),
-                getCachedWithingsActivity(withingsToken, startdateymd, enddateymd),
-                getCachedWithingsMeasures(withingsToken, startdate, enddate)
-            ]);
-
-            const allRhrs = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
+        if (appleHealthConnected) {
+            console.log('[Apple Health-PMC] Cargando 180 días de historial de pasos, sueño y peso...');
+            const filled180 = getFilledAppleHistory(180);
+            
+            const allRhrs = filled180.map(h => h.restingHeartRate).filter(hr => hr > 0);
             if (allRhrs.length > 0) averageRhr = Math.round(allRhrs.reduce((a, b) => a + b, 0) / allRhrs.length);
+            
+            for (const h of filled180) {
+                sleepMap[h.date] = { score: h.sleepScore || 75, rhr: h.restingHeartRate || 55, duration: h.sleepDurationHours || 7.2 };
+                stepsMap[h.date] = h.steps || 0;
+                weightMap[h.date] = h.weight || 75.2;
+            }
+        } else {
+            try {
+                const withingsToken       = await getWithingsValidAccessToken();
+                const today               = new Date();
+                const hundredEightyDaysAgo = new Date(); hundredEightyDaysAgo.setDate(today.getDate() - 180);
+                const startdateymd        = hundredEightyDaysAgo.toISOString().split('T')[0];
+                const enddateymd          = today.toISOString().split('T')[0];
+                const startdate           = Math.floor(hundredEightyDaysAgo.getTime() / 1000);
+                const enddate             = Math.floor(today.getTime() / 1000);
 
-            for (const s of sleepSeries) {
-                sleepMap[s.date] = { score: s.data.sleep_score || 75, rhr: s.data.hr_average || 55 };
-            }
-            for (const a of actsWithings) { stepsMap[a.date] = a.steps || 0; }
-            for (const grp of measureGrps) {
-                const dateStr = new Date(grp.date * 1000).toISOString().split('T')[0];
-                for (const m of grp.measures) {
-                    if (m.type === 1) weightMap[dateStr] = parseFloat((m.value * Math.pow(10, m.unit)).toFixed(1));
+                console.log('[Withings-PMC] Fetching 180 days of sleep, activity and weight...');
+                const [sleepSeries, actsWithings, measureGrps] = await Promise.all([
+                    getCachedWithingsSleep(withingsToken, startdateymd, enddateymd),
+                    getCachedWithingsActivity(withingsToken, startdateymd, enddateymd),
+                    getCachedWithingsMeasures(withingsToken, startdate, enddate)
+                ]);
+
+                const allRhrs = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
+                if (allRhrs.length > 0) averageRhr = Math.round(allRhrs.reduce((a, b) => a + b, 0) / allRhrs.length);
+
+                for (const s of sleepSeries) {
+                    sleepMap[s.date] = { score: s.data.sleep_score || 75, rhr: s.data.hr_average || 55 };
                 }
+                for (const a of actsWithings) { stepsMap[a.date] = a.steps || 0; }
+                for (const grp of measureGrps) {
+                    const dateStr = new Date(grp.date * 1000).toISOString().split('T')[0];
+                    for (const m of grp.measures) {
+                        if (m.type === 1) weightMap[dateStr] = parseFloat((m.value * Math.pow(10, m.unit)).toFixed(1));
+                    }
+                }
+                withingsConnected = sleepSeries.length > 0;
+            } catch (e) {
+                console.log(`[Withings-PMC] Sincronización biométrica PMC no disponible: ${e.message}`);
             }
-            withingsConnected = sleepSeries.length > 0;
-        } catch (e) {
-            console.log(`[Withings-PMC] Sincronización biométrica PMC no disponible: ${e.message}`);
         }
 
         // PMC con ajuste de peso
@@ -1317,46 +1517,86 @@ app.get('/api/recovery', async (req, res) => {
         const stepsMap       = {};
         let sleepHistory28   = [], rhrHistory28 = [], sleepScores28 = [];
 
-        try {
-            const withingsToken   = await getWithingsValidAccessToken();
-            const today           = new Date();
-            const twentyEightAgo  = new Date(); twentyEightAgo.setDate(today.getDate() - 28);
-            const startdateymd    = twentyEightAgo.toISOString().split('T')[0];
-            const enddateymd      = today.toISOString().split('T')[0];
+        let appleData = {};
+        try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
+        const appleHealthConnected = Object.keys(appleData).length > 0;
 
-            console.log('[Withings] Fetching 28 days of sleep and activity summaries...');
-            const [sleepSeries, actsWithings] = await Promise.all([
-                getCachedWithingsSleep(withingsToken, startdateymd, enddateymd),
-                getCachedWithingsActivity(withingsToken, startdateymd, enddateymd)
-            ]);
-
-            if (sleepSeries.length > 0) {
-                sleepHistory28 = sleepSeries.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
-                rhrHistory28   = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
-                sleepScores28  = sleepSeries.map(s => s.data.sleep_score || 75);
-                const breathingHistory28 = sleepSeries.map(s => s.data.breathing_rate || 13.5).filter(br => br > 0);
-                const avgSleep  = sleepHistory28.length > 0 ? parseFloat((sleepHistory28.reduce((a,b) => a+b,0) / sleepHistory28.length).toFixed(1)) : 7.2;
-                const avgRhr    = rhrHistory28.length > 0   ? Math.round(rhrHistory28.reduce((a,b) => a+b,0) / rhrHistory28.length) : 56;
-                const avgBreathing = breathingHistory28.length > 0 ? parseFloat((breathingHistory28.reduce((a,b) => a+b,0) / breathingHistory28.length).toFixed(1)) : 13.4;
-                const latestSeries = sleepSeries[0]?.data || {};
-                sleepData = {
-                    history: [...sleepHistory28].slice(0, 28).reverse(),
-                    average: avgSleep,
-                    currentScore: sleepScores28[0] || 75,
-                    breathingRate: { current: breathingHistory28[0] || 13.2, average: avgBreathing, history: [...breathingHistory28].slice(0, 28).reverse() },
-                    stages: {
-                        deep:  parseFloat(((latestSeries.deepsleepduration  || 0) / 3600).toFixed(1)) || 1.8,
-                        light: parseFloat(((latestSeries.lightsleepduration || 0) / 3600).toFixed(1)) || 4.2,
-                        rem:   parseFloat(((latestSeries.remsleepduration   || 0) / 3600).toFixed(1)) || 1.5,
-                        awake: parseFloat(((latestSeries.wakeupduration     || 0) / 3600).toFixed(1)) || 0.3
-                    }
-                };
-                rhrData = { history: [...rhrHistory28].slice(0, 28).reverse(), average: avgRhr, current: rhrHistory28[0] || 55 };
-                withingsConnected = true;
+        if (appleHealthConnected) {
+            console.log('[Apple Health-Recovery] Cargando 28 días de historial para recuperación...');
+            const filled28 = getFilledAppleHistory(28);
+            
+            sleepHistory28 = filled28.map(h => h.sleepDurationHours);
+            rhrHistory28   = filled28.map(h => h.restingHeartRate);
+            sleepScores28  = filled28.map(h => h.sleepScore);
+            
+            const breathingHistory28 = filled28.map(h => 13.5); // Respuestas por defecto para frecuencia respiratoria
+            
+            const avgSleep  = parseFloat((sleepHistory28.reduce((a,b) => a+b,0) / 28).toFixed(1));
+            const avgRhr    = Math.round(rhrHistory28.reduce((a,b) => a+b,0) / 28);
+            const avgBreathing = 13.4;
+            
+            const latest = filled28[filled28.length - 1];
+            
+            sleepData = {
+                history: [...sleepHistory28].reverse(),
+                average: avgSleep,
+                currentScore: latest.sleepScore,
+                breathingRate: { current: 13.2, average: avgBreathing, history: breathingHistory28 },
+                stages: {
+                    deep:  parseFloat((latest.sleepDurationHours * 0.25).toFixed(1)) || 1.8,
+                    light: parseFloat((latest.sleepDurationHours * 0.58).toFixed(1)) || 4.2,
+                    rem:   parseFloat((latest.sleepDurationHours * 0.20).toFixed(1)) || 1.5,
+                    awake: parseFloat((latest.sleepDurationHours * 0.05).toFixed(1)) || 0.3
+                }
+            };
+            
+            rhrData = { history: [...rhrHistory28].reverse(), average: avgRhr, current: latest.restingHeartRate };
+            
+            for (const h of filled28) {
+                stepsMap[h.date] = h.steps || 0;
             }
-            for (const a of actsWithings) stepsMap[a.date] = a.steps || 0;
-        } catch (e) {
-            console.log(`[Recovery] Withings sleep/activity data not available: ${e.message}`);
+        } else {
+            try {
+                const withingsToken   = await getWithingsValidAccessToken();
+                const today           = new Date();
+                const twentyEightAgo  = new Date(); twentyEightAgo.setDate(today.getDate() - 28);
+                const startdateymd    = twentyEightAgo.toISOString().split('T')[0];
+                const enddateymd      = today.toISOString().split('T')[0];
+
+                console.log('[Withings] Fetching 28 days of sleep and activity summaries...');
+                const [sleepSeries, actsWithings] = await Promise.all([
+                    getCachedWithingsSleep(withingsToken, startdateymd, enddateymd),
+                    getCachedWithingsActivity(withingsToken, startdateymd, enddateymd)
+                ]);
+
+                if (sleepSeries.length > 0) {
+                    sleepHistory28 = sleepSeries.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
+                    rhrHistory28   = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
+                    sleepScores28  = sleepSeries.map(s => s.data.sleep_score || 75);
+                    const breathingHistory28 = sleepSeries.map(s => s.data.breathing_rate || 13.5).filter(br => br > 0);
+                    const avgSleep  = sleepHistory28.length > 0 ? parseFloat((sleepHistory28.reduce((a,b) => a+b,0) / sleepHistory28.length).toFixed(1)) : 7.2;
+                    const avgRhr    = rhrHistory28.length > 0   ? Math.round(rhrHistory28.reduce((a,b) => a+b,0) / rhrHistory28.length) : 56;
+                    const avgBreathing = breathingHistory28.length > 0 ? parseFloat((breathingHistory28.reduce((a,b) => a+b,0) / breathingHistory28.length).toFixed(1)) : 13.4;
+                    const latestSeries = sleepSeries[0]?.data || {};
+                    sleepData = {
+                        history: [...sleepHistory28].slice(0, 28).reverse(),
+                        average: avgSleep,
+                        currentScore: sleepScores28[0] || 75,
+                        breathingRate: { current: breathingHistory28[0] || 13.2, average: avgBreathing, history: [...breathingHistory28].slice(0, 28).reverse() },
+                        stages: {
+                            deep:  parseFloat(((latestSeries.deepsleepduration  || 0) / 3600).toFixed(1)) || 1.8,
+                            light: parseFloat(((latestSeries.lightsleepduration || 0) / 3600).toFixed(1)) || 4.2,
+                            rem:   parseFloat(((latestSeries.remsleepduration   || 0) / 3600).toFixed(1)) || 1.5,
+                            awake: parseFloat(((latestSeries.wakeupduration     || 0) / 3600).toFixed(1)) || 0.3
+                        }
+                    };
+                    rhrData = { history: [...rhrHistory28].slice(0, 28).reverse(), average: avgRhr, current: rhrHistory28[0] || 55 };
+                    withingsConnected = true;
+                }
+                for (const a of actsWithings) stepsMap[a.date] = a.steps || 0;
+            } catch (e) {
+                console.log(`[Recovery] Withings sleep/activity data not available: ${e.message}`);
+            }
         }
 
         // Fallbacks realistas si no hay Withings
@@ -1380,9 +1620,14 @@ app.get('/api/recovery', async (req, res) => {
         const todayPmc  = pmcFull[pmcFull.length - 1];
         const currentTsb = todayPmc.tsb;
 
-        // HRV rMSSD — pase único O(n) usando PMC precomputado (ANTES era O(n²))
+        // HRV rMSSD — pase único O(n) usando PMC precomputado (preferiendo HRV real si hay Apple Health)
+        const filled28ForHrv = getFilledAppleHistory(28);
         const rhrAvg        = rhrData.average;
         const hrvHistory28  = pmcFull.slice(-28).map((pmcDay, i) => {
+            const h = filled28ForHrv[i] || {};
+            if (h.hrv && h.hrv > 0) {
+                return h.hrv;
+            }
             const rhr_day       = rhrData.history[i] || 55;
             const sleepScore_day = sleepScores28[i] || 75;
             const rhrContrib    = (rhrAvg - rhr_day) * 1.5;
@@ -1481,6 +1726,7 @@ app.get('/api/recovery', async (req, res) => {
             zones: zonePcts, hasHrData: hrActs.length > 0, last28,
             sleepData, rhrData, hrvData, readinessScore, recoveryScore: readinessScore,
             strainScore: strainHistory[6].strain, strainHistory, withingsConnected,
+            appleHealthConnected,
             acwr: acwrToday
         });
     } catch (error) {
@@ -1515,20 +1761,32 @@ app.post('/api/ai/coach', async (req, res) => {
         let rhrHistory28   = [56, 54, 57, 55, 54, 56, 55, 54, 53, 56, 55, 57, 54, 55, 56, 54, 58, 55, 53, 56, 54, 55, 53, 57, 54, 53, 56, 54];
         let sleepScores28  = [78, 65, 85, 72, 60, 82, 75, 76, 68, 84, 70, 58, 80, 74, 77, 64, 83, 73, 62, 79, 76, 78, 66, 86, 71, 61, 81, 73];
 
-        try {
-            const withingsToken   = await getWithingsValidAccessToken();
-            const today           = new Date();
-            const twentyEightAgo  = new Date(); twentyEightAgo.setDate(today.getDate() - 28);
-            const startdateymd    = twentyEightAgo.toISOString().split('T')[0];
-            const enddateymd      = today.toISOString().split('T')[0];
-            const sleepSeries     = await getCachedWithingsSleep(withingsToken, startdateymd, enddateymd);
-            if (sleepSeries.length > 0) {
-                sleepScores28  = sleepSeries.map(s => s.data.sleep_score || 75);
-                rhrHistory28   = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
-                sleepHistory28 = sleepSeries.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
+        let appleData = {};
+        try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
+        const appleHealthConnected = Object.keys(appleData).length > 0;
+
+        if (appleHealthConnected) {
+            console.log('[AI-Coach] Alimentando IA con datos de Apple Health...');
+            const filled28 = getFilledAppleHistory(28);
+            sleepScores28  = filled28.map(h => h.sleepScore);
+            rhrHistory28   = filled28.map(h => h.restingHeartRate);
+            sleepHistory28 = filled28.map(h => h.sleepDurationHours);
+        } else {
+            try {
+                const withingsToken   = await getWithingsValidAccessToken();
+                const today           = new Date();
+                const twentyEightAgo  = new Date(); twentyEightAgo.setDate(today.getDate() - 28);
+                const startdateymd    = twentyEightAgo.toISOString().split('T')[0];
+                const enddateymd      = today.toISOString().split('T')[0];
+                const sleepSeries     = await getCachedWithingsSleep(withingsToken, startdateymd, enddateymd);
+                if (sleepSeries.length > 0) {
+                    sleepScores28  = sleepSeries.map(s => s.data.sleep_score || 75);
+                    rhrHistory28   = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
+                    sleepHistory28 = sleepSeries.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
+                }
+            } catch {
+                console.log('[AI-Context] Withings sleep summaries failed, utilizing default baselines.');
             }
-        } catch {
-            console.log('[AI-Context] Withings sleep summaries failed, utilizing default baselines.');
         }
 
         currentSleep = sleepScores28[0] || 78;

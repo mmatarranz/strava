@@ -15,7 +15,8 @@ const TrainingReadiness = ({ data }) => {
     hrvData,
     strainScore,
     strainHistory,
-    withingsConnected
+    withingsConnected,
+    appleHealthConnected
   } = data;
 
   const [activeTab, setActiveTab] = useState('readiness'); // 'readiness', 'hrv_corridor', 'strain_balance'
@@ -60,7 +61,11 @@ const TrainingReadiness = ({ data }) => {
             <Activity size={20} style={{ color: theme.color }} /> Predisposición Diaria
           </h2>
           <p className="text-muted text-xs">
-            {withingsConnected ? '⚡ Biometría y actividad (pasos) activa de Withings' : '🛌 Datos analizados (Simulados)'}
+            {appleHealthConnected 
+              ? '⚡ Biometría, HRV y actividad de Apple Health activa' 
+              : withingsConnected 
+                ? '⚡ Biometría y actividad (pasos) activa de Withings' 
+                : '🛌 Datos analizados (Simulados)'}
           </p>
         </div>
 
