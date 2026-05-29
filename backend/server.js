@@ -887,6 +887,21 @@ function resolveTypeForMap(act) {
     return ACTIVITY_TYPE_MAP[act.sport_type] || ACTIVITY_TYPE_MAP[act.type] || null;
 }
 
+function isPassiveRecoveryActivity(act) {
+    const actLabel = resolveTypeForMap(act);
+    const nameLower = (act.name || '').toLowerCase();
+    
+    // Excluir sesiones de recuperación pasiva como estiramientos, yoga, sauna o similares
+    return actLabel === 'Estiramientos' || 
+           nameLower.includes('sauna') || 
+           nameLower.includes('estiramiento') || 
+           nameLower.includes('yoga') || 
+           nameLower.includes('pilates') ||
+           nameLower.includes('stretching') ||
+           nameLower.includes('recuperacion pasiva') ||
+           nameLower.includes('recuperación pasiva');
+}
+
 // ---------------------------
 // ENDPOINT: ESTADÍSTICAS (Diario / Mensual / Anual)
 // ---------------------------
@@ -1253,6 +1268,8 @@ app.get('/api/fitness', async (req, res) => {
         // Construir mapa fecha -> carga diaria (TRIMP proxy)
         const loadByDay = {};
         allActivities.forEach(act => {
+            if (isPassiveRecoveryActivity(act)) return; // Excluir recuperación pasiva (sauna, estiramientos)
+            
             const dateStr = new Date(act.start_date).toISOString().split('T')[0];
             let load = act.suffer_score || 0;
             if (!load && act.moving_time) {
@@ -1632,6 +1649,8 @@ app.get('/api/recovery', async (req, res) => {
         // Calcular TSB diario de los últimos 28 días
         const loadByDay = {};
         allYearActs.forEach(act => {
+            if (isPassiveRecoveryActivity(act)) return; // Excluir recuperación pasiva (sauna, estiramientos)
+            
             const dateStr = new Date(act.start_date).toISOString().split('T')[0];
             let load = act.suffer_score || 0;
             if (!load && act.moving_time) {
@@ -1923,6 +1942,8 @@ app.post('/api/ai/coach', async (req, res) => {
         // TSB actual
         const loadByDay = {};
         allYearActs.forEach(act => {
+            if (isPassiveRecoveryActivity(act)) return; // Excluir recuperación pasiva (sauna, estiramientos)
+            
             const dateStr = new Date(act.start_date).toISOString().split('T')[0];
             let load = act.suffer_score || 0;
             if (!load && act.moving_time) {
@@ -2073,6 +2094,8 @@ app.get('/api/ai/weekly-report', async (req, res) => {
         // TSB
         const loadByDay = {};
         allYearActs.forEach(act => {
+            if (isPassiveRecoveryActivity(act)) return; // Excluir recuperación pasiva (sauna, estiramientos)
+            
             const dateStr = new Date(act.start_date).toISOString().split('T')[0];
             loadByDay[dateStr] = (loadByDay[dateStr] || 0) + (act.suffer_score || 20);
         });
