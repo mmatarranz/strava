@@ -17,6 +17,7 @@ import TrainingReadiness from './components/TrainingReadiness';
 import AerobicEfficiency from './components/AerobicEfficiency';
 import AICoachDrawer from './components/AICoachDrawer';
 import AIReportCard from './components/AIReportCard';
+import HeartRateDistribution from './components/HeartRateDistribution';
 import './index.css';
 
 const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
@@ -218,6 +219,7 @@ function App() {
               {/* Columna Derecha: 1/3 del ancho (Lateral) */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 <TrainingCalendar activities={activities} />
+                <HeartRateDistribution data={recoveryData} />
               </div>
             </div>
           )}
