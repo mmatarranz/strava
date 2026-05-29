@@ -1,5 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Calendar, Clock, Heart, Trophy, Dumbbell, Bike, Waves, Flame, Zap, TrendingUp, Activity, BrainCircuit, Sparkles, RefreshCw } from 'lucide-react';
+
+// Constante de módulo: calculada una sola vez, no en cada render ni en cada handler
+const API_URL = import.meta.env.VITE_API_URL ||
+  (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
 
 const LastActivity = ({ activities }) => {
   if (!activities || activities.length === 0) return null;
@@ -23,7 +27,6 @@ const LastActivity = ({ activities }) => {
       setLoadingAi(true);
       setErrorAi(null);
       try {
-        const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
         const res = await fetch(`${API_URL}/activities/${selectedId}/ai-analyze`, {
           method: 'POST'
         });
@@ -157,6 +160,9 @@ const LastActivity = ({ activities }) => {
   };
 
   const effect = getTrainingEffect(suffer_score, average_heartrate);
+
+  // Memoizar la conversión de Markdown: solo se re-ejecuta si aiAnalysis cambia
+  const parsedAnalysis = useMemo(() => parseMarkdownToHTML(aiAnalysis), [aiAnalysis]);
 
   // Formatear distancia
   const distanceFormatted = distance ? (distance / 1000).toFixed(2) : '0.00';
@@ -451,7 +457,6 @@ const LastActivity = ({ activities }) => {
             onClick={() => {
               setLoadingAi(true);
               setErrorAi(null);
-              const API_URL = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:3000/api' : '/api');
               fetch(`${API_URL}/activities/${selectedId}/ai-analyze?force=true`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => {
@@ -521,27 +526,11 @@ const LastActivity = ({ activities }) => {
               padding: '0.25rem 0',
               overflowY: 'auto'
             }}
-            dangerouslySetInnerHTML={{ __html: parseMarkdownToHTML(aiAnalysis) }}
+            dangerouslySetInnerHTML={{ __html: parsedAnalysis }}
           />
         )}
       </div>
 
-      <style>{`
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .skeleton-pulse {
-          animation: pulse 1.6s ease-in-out infinite;
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 0.35; }
-          50% { opacity: 0.85; }
-        }
-      `}</style>
 
     </div>
   );
