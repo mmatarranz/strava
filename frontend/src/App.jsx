@@ -111,6 +111,23 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  const handleSyncFullHistory = async () => {
+    setLoading(true);
+    try {
+      const freshHistory = await apiFetch('/history?sync=full');
+      setHistoryData(Array.isArray(freshHistory) ? freshHistory : []);
+      const freshActs = await apiFetch('/activities');
+      setActivities(Array.isArray(freshActs) ? freshActs : []);
+      const freshStats = await apiFetch('/stats');
+      setStats(freshStats);
+    } catch (e) {
+      console.error(e);
+      setErrorMsg('Error realizando sincronización completa de histórico: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontSize: '1.5rem' }}>
       <span className="text-gradient">Cargando Dashboard...</span>
@@ -233,7 +250,7 @@ function App() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '1.5rem' }}>
                 <ActivityBreakdown stats={stats} />
-                <HistoricalStats data={historyData} />
+                <HistoricalStats data={historyData} onSyncFull={handleSyncFullHistory} />
               </div>
             </div>
           )}

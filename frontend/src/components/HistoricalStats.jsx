@@ -2,8 +2,10 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { History } from 'lucide-react';
 
-const HistoricalStats = ({ data }) => {
+const HistoricalStats = ({ data, onSyncFull }) => {
   if (!data || data.length === 0) return null;
+
+  const [syncing, setSyncing] = React.useState(false);
 
   // Filtrar el año actual si se desea (o dejarlo para comparar)
   // El usuario pidió "años anteriores", pero suele ser útil ver la comparativa.
@@ -12,11 +14,50 @@ const HistoricalStats = ({ data }) => {
 
   if (pastYears.length === 0) return null;
 
+  const handleSyncClick = async () => {
+    if (!onSyncFull) return;
+    setSyncing(true);
+    try {
+      await onSyncFull();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <History size={20} color="var(--strava-orange)" />
-        <h2 className="text-xl">Histórico de Años Anteriores</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <History size={20} color="var(--strava-orange)" />
+          <h2 className="text-xl">Histórico de Años Anteriores</h2>
+        </div>
+        {onSyncFull && (
+          <button
+            onClick={handleSyncClick}
+            disabled={syncing}
+            style={{
+              padding: '0.35rem 0.75rem',
+              fontSize: '0.72rem',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              background: 'rgba(255, 255, 255, 0.04)',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              fontWeight: 600,
+              transition: 'all 0.2s ease',
+              margin: 0
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = 'white'; }}
+            onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+          >
+            {syncing ? '🔄 Sincronizando...' : '🔄 Sincronización Profunda'}
+          </button>
+        )}
       </div>
 
       <div style={{ height: '280px' }}>

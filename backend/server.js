@@ -398,18 +398,18 @@ function findCachedActivity(id) {
 
 let activeSyncPromise = null;
 
-async function syncActivities(token) {
+async function syncActivities(token, forceFull = false) {
     const cachedActs = loadActivitiesFromFile();
     const cachedIds = new Set(cachedActs.map(a => Number(a.id)));
     
     const newActs = [];
     let rateLimited = false;
     
-    // Si la caché está vacía, cargamos hasta 15 páginas inicialmente para poblar el dashboard sin exceder el rate limit.
-    // Si ya tiene datos, buscamos como máximo en 5 páginas (250 actividades) para detectar actividades nuevas.
-    const maxPages = cachedActs.length === 0 ? 15 : 5;
+    // Si es un sync completo forzado, vamos hasta 60 páginas (3000 actividades).
+    // Si es inicial vacío, hasta 30 páginas initially. Si es incremental normal, 5 páginas.
+    const maxPages = forceFull ? 60 : (cachedActs.length === 0 ? 30 : 5);
     
-    console.log(`[Sync] Iniciando sincronización incremental. Actividades en caché: ${cachedActs.length}`);
+    console.log(`[Sync] Iniciando sincronización. Modo completo: ${forceFull}. Actividades en caché: ${cachedActs.length}`);
     
     for (let i = 1; i <= maxPages; i++) {
         let url = `https://www.strava.com/api/v3/athlete/activities?per_page=50&page=${i}`;
@@ -429,8 +429,10 @@ async function syncActivities(token) {
                 }
             }
             
-            if (foundExisting) {
-                console.log(`[Sync] Se detectaron actividades existentes en la página ${i}. Parando sincronización.`);
+            // En una sincronización incremental normal, paramos si detectamos actividades ya cacheadas.
+            // En una sincronización completa forzada (forceFull), seguimos adelante para descargar el histórico antiguo!
+            if (foundExisting && !forceFull) {
+                console.log(`[Sync] Se detectaron actividades existentes en la página ${i}. Parando sincronización incremental.`);
                 break;
             }
             
@@ -445,23 +447,42 @@ async function syncActivities(token) {
         }
     }
     
+    let combined = [...cachedActs];
     if (newActs.length > 0) {
-        const combined = [...newActs, ...cachedActs];
-        // Ordenar por fecha de más reciente a más antigua
-        combined.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+        combined = [...newActs, ...cachedActs];
+    }
+    
+    // Si es sync forzado completo, nos aseguramos de purgar cualquier posible duplicado por ID
+    if (forceFull) {
+        const uniqueActs = [];
+        const seenIds = new Set();
+        for (const act of [...newActs, ...cachedActs]) {
+            const numId = Number(act.id);
+            if (!seenIds.has(numId)) {
+                seenIds.add(numId);
+                uniqueActs.push(act);
+            }
+        }
+        combined = uniqueActs;
+    }
+    
+    // Ordenar de más reciente a más antigua
+    combined.sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+    
+    if (newActs.length > 0 || forceFull) {
         saveActivitiesToFile(combined);
-        console.log(`[Sync] Sincronización exitosa. Se agregaron ${newActs.length} actividades nuevas. Total en caché: ${combined.length}`);
+        console.log(`[Sync] Sincronización finalizada. Nuevas: ${newActs.length}. Total en caché: ${combined.length}`);
         return combined;
     } else {
-        console.log(`[Sync] Sincronización al día. No se detectaron nuevas actividades. Total: ${cachedActs.length}`);
+        console.log(`[Sync] Sincronización al día. Sin novedades. Total: ${cachedActs.length}`);
         return cachedActs;
     }
 }
 
 // Trae actividades paginadas con caché compartida de archivo y sincronización única segura
-async function fetchAllActivities(token, pages = 8, afterTimestamp = null) {
+async function fetchAllActivities(token, pages = 8, afterTimestamp = null, forceFull = false) {
     if (!activeSyncPromise) {
-        activeSyncPromise = syncActivities(token)
+        activeSyncPromise = syncActivities(token, forceFull)
             .finally(() => {
                 activeSyncPromise = null;
             });
@@ -591,8 +612,9 @@ app.post('/api/activities/:id/ai-analyze', async (req, res) => {
 
         // 2. Generar el reporte con Gemini
         let aiReport = "";
+        let isSimulated = true;
         
-        if (process.env.GEMINI_API_KEY) {
+        if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('tu_gemini_api_key')) {
             console.log(`[AI-Activity] Analyzing activity ${id} with Gemini (Resilient mode)...`);
             
             const prompt = `Eres un preparador físico y fisiólogo deportivo de élite. Escribe un análisis exhaustivo y motivador sobre la siguiente sesión de entrenamiento realizada por Miguel:
@@ -619,6 +641,7 @@ Mantén un tono riguroso, científico, alentador y personalizado para Miguel.`;
             try {
                 const result = await callGeminiWithFallback(prompt);
                 aiReport = result.text;
+                isSimulated = false; // ¡Éxito de Gemini!
             } catch (err) {
                 console.error("[AI-Activity] Resilient Gemini calls failed. Falling back to local report.", err.message);
             }
@@ -641,9 +664,11 @@ Mantén un tono riguroso, científico, alentador y personalizado para Miguel.`;
 * **Descanso:** Prioriza el sueño de calidad de al menos 7.5 horas con foco en fases de sueño profundo (recuperación muscular/hormonal).`;
         }
 
-        // Guardar en la caché persistente para evitar exceder cuotas de Gemini
+        // Guardar en la caché persistente para evitar exceder cuotas de Gemini (SOLO si fue exitosa con la API de Gemini)
         const responseData = { analysis: aiReport };
-        setAiCached(cacheKey, responseData);
+        if (!isSimulated) {
+            setAiCached(cacheKey, responseData);
+        }
 
         res.json(responseData);
     } catch (error) {
@@ -758,12 +783,17 @@ app.get('/api/annual-progress', async (req, res) => {
 app.get('/api/history', async (req, res) => {
     try {
         const token = await getValidAccessToken();
+        const forceFull = req.query.sync === 'full';
         const cacheKey = 'history_all_years';
-        const cached = getCached(cacheKey);
-        if (cached) return res.json(cached);
+        
+        // Si se fuerza un sync completo, ignoramos la caché en memoria para regenerarla
+        if (!forceFull) {
+            const cached = getCached(cacheKey);
+            if (cached) return res.json(cached);
+        }
 
-        // Traemos muchísimas páginas para intentar cubrir todo el histórico (60 páginas = 3000 actividades)
-        const allActivities = await fetchAllActivities(token, 60);
+        // Traemos actividades forzando un sync completo de hasta 60 páginas si se requiere
+        const allActivities = await fetchAllActivities(token, 60, null, forceFull);
 
         const history = {};
 
@@ -798,7 +828,10 @@ app.get('/api/history', async (req, res) => {
         res.json(result);
     } catch (error) {
         if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') res.status(401).json({ error: 'No autenticado' });
-        else res.status(500).json({ error: 'Error obteniendo histórico' });
+        else {
+            console.error("Error en /api/history:", error.message);
+            res.status(500).json({ error: 'Error obteniendo histórico' });
+        }
     }
 });
 
@@ -2071,9 +2104,10 @@ app.get('/api/ai/weekly-report', async (req, res) => {
 * **Recuperación**: Mantener al menos 1 día de descanso completo o regenerativo para restablecer tus reservas de glucógeno y disipar la fatiga del sistema nervioso simpático.
 
 \n\n> *Nota del Coach:* Usando el motor de diagnóstico local debido a una desconexión o saturación temporal en la API de Gemini.`;
+        let isSimulated = true;
 
         // Si hay clave Gemini, generamos uno completamente dinámico
-        if (process.env.GEMINI_API_KEY) {
+        if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('tu_gemini_api_key')) {
             console.log("[AI-Report] Generating dynamic weekly sports report with Gemini (Resilient mode)...");
             try {
                 const systemPrompt = `Eres un científico deportivo de élite. Escribe un reporte diagnóstico de entrenamiento deportivo personalizado para Miguel basándote en estos datos de sus últimos 28 días:
@@ -2090,13 +2124,16 @@ Usa viñetas, mantén el tono profesional pero motivador, e imprímele rigor cie
 
                 const result = await callGeminiWithFallback(systemPrompt);
                 reportMarkdown = result.text;
+                isSimulated = false; // ¡Éxito de Gemini!
             } catch (err) {
                 console.error("[AI-Report] Resilient Gemini calls failed for weekly report:", err.message);
             }
         }
 
         const responseData = { report: reportMarkdown };
-        setAiCached(cacheKey, responseData);
+        if (!isSimulated) {
+            setAiCached(cacheKey, responseData);
+        }
         res.json(responseData);
     } catch (error) {
         console.error(error);
