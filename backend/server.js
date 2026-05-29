@@ -11,6 +11,7 @@ app.use(express.json());
 
 const PORT = 3000;
 const TOKENS_FILE = path.join(__dirname, 'tokens.json');
+const AI_CACHE_FILE = path.join(__dirname, 'ai_cache.json');
 
 // Utilidades de conversión
 const metersToKm = (meters) => (meters / 1000).toFixed(2);
@@ -134,6 +135,92 @@ async function fetchWithingsActivity(accessToken, startdateymd, enddateymd) {
         console.error("[Withings] Error fetching activity:", e.response?.data || e.message);
         return [];
     }
+}
+
+// ---------------------------
+// GESTIÓN DE CACHÉ DE IA Y LLAMADAS RESILIENTES A GEMINI
+// ---------------------------
+function loadAiCache() {
+    if (fs.existsSync(AI_CACHE_FILE)) {
+        try {
+            return JSON.parse(fs.readFileSync(AI_CACHE_FILE, 'utf8'));
+        } catch (e) {
+            console.error("Error reading ai_cache.json, resetting cache", e);
+            return {};
+        }
+    }
+    return {};
+}
+
+function saveAiCache(cache) {
+    try {
+        fs.writeFileSync(AI_CACHE_FILE, JSON.stringify(cache, null, 2));
+    } catch (e) {
+        console.error("Error writing ai_cache.json", e);
+    }
+}
+
+function getAiCached(key) {
+    const cache = loadAiCache();
+    const entry = cache[key];
+    // Cache TTL de 30 días para análisis de actividades e informes semanales
+    if (entry && Date.now() - entry.ts < 30 * 24 * 60 * 60 * 1000) {
+        return entry.data;
+    }
+    return null;
+}
+
+function setAiCached(key, data) {
+    const cache = loadAiCache();
+    cache[key] = { data, ts: Date.now() };
+    saveAiCache(cache);
+}
+
+async function callGeminiWithFallback(contents, modelOverride = null) {
+    const models = [];
+    if (modelOverride) {
+        models.push(modelOverride);
+    } else if (process.env.GEMINI_MODEL) {
+        models.push(process.env.GEMINI_MODEL);
+    }
+    // Listado de modelos con cuotas independientes e hilos de estabilidad
+    models.push('gemini-2.5-flash');
+    models.push('gemini-1.5-flash-8b'); // ¡Cuota independiente muy rápida y ligera!
+    models.push('gemini-1.5-flash-latest');
+    models.push('gemini-1.5-flash');
+    models.push('gemini-1.5-pro');
+
+    const formattedContents = typeof contents === 'string'
+        ? [{ role: 'user', parts: [{ text: contents }] }]
+        : contents;
+
+    let lastError = null;
+    for (const model of models) {
+        try {
+            console.log(`[Gemini-Resilient] Intentando llamada con modelo: ${model}...`);
+            const response = await axios.post(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+                { contents: formattedContents },
+                { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
+            );
+
+            if (response.data && response.data.candidates && response.data.candidates[0].content) {
+                const text = response.data.candidates[0].content.parts[0].text;
+                console.log(`[Gemini-Resilient] Éxito con el modelo: ${model}`);
+                return { text, model };
+            }
+        } catch (err) {
+            lastError = err;
+            const status = err.response?.status;
+            const errMsg = err.response?.data?.error?.message || err.message;
+            console.warn(`[Gemini-Resilient] El modelo ${model} falló (Status ${status}): ${errMsg}`);
+            
+            if (status === 400 && errMsg.includes('API key')) {
+                break;
+            }
+        }
+    }
+    throw lastError || new Error("Todos los modelos de Gemini fallaron");
 }
 
 // ---------------------------
@@ -473,11 +560,11 @@ app.post('/api/activities/:id/ai-analyze', async (req, res) => {
         const force = req.query.force === 'true';
         const cacheKey = `ai_analyze_${id}`;
 
-        // 0. Comprobar caché si no se fuerza la recarga
+        // 0. Comprobar caché persistente si no se fuerza la recarga
         if (!force) {
-            const cached = getCached(cacheKey);
+            const cached = getAiCached(cacheKey);
             if (cached) {
-                console.log(`[cache hit] ai-analyze for activity ${id}`);
+                console.log(`[cache hit] ai-analyze (persistent) for activity ${id}`);
                 return res.json(cached);
             }
         }
@@ -497,7 +584,6 @@ app.post('/api/activities/:id/ai-analyze', async (req, res) => {
             // Intentar buscar en las actividades ya cacheadas en memoria
             act = findCachedActivity(id);
             if (!act) {
-                // Si no está en caché de ninguna forma, relanzamos el error
                 throw stravaErr;
             }
             console.log(`[AI-Activity] Found basic activity details in cache for ${id}.`);
@@ -507,8 +593,7 @@ app.post('/api/activities/:id/ai-analyze', async (req, res) => {
         let aiReport = "";
         
         if (process.env.GEMINI_API_KEY) {
-            console.log(`[AI-Activity] Analyzing activity ${id} with Gemini...`);
-            const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+            console.log(`[AI-Activity] Analyzing activity ${id} with Gemini (Resilient mode)...`);
             
             const prompt = `Eres un preparador físico y fisiólogo deportivo de élite. Escribe un análisis exhaustivo y motivador sobre la siguiente sesión de entrenamiento realizada por Miguel:
 Actividad: "${act.name}"
@@ -532,17 +617,10 @@ Di qué comer (nutrición), beber (hidratación) y cuántas horas de sueño prof
 Mantén un tono riguroso, científico, alentador y personalizado para Miguel.`;
 
             try {
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-                    { contents: [{ role: 'user', parts: [{ text: prompt }] }] },
-                    { headers: { 'Content-Type': 'application/json' } }
-                );
-
-                if (response.data && response.data.candidates && response.data.candidates[0].content) {
-                    aiReport = response.data.candidates[0].content.parts[0].text;
-                }
+                const result = await callGeminiWithFallback(prompt);
+                aiReport = result.text;
             } catch (err) {
-                console.error("[AI-Activity] Gemini call failed:", err.message);
+                console.error("[AI-Activity] Resilient Gemini calls failed. Falling back to local report.", err.message);
             }
         }
 
@@ -563,9 +641,9 @@ Mantén un tono riguroso, científico, alentador y personalizado para Miguel.`;
 * **Descanso:** Prioriza el sueño de calidad de al menos 7.5 horas con foco en fases de sueño profundo (recuperación muscular/hormonal).`;
         }
 
-        // Guardar en la caché en memoria para futuras consultas rápidas
+        // Guardar en la caché persistente para evitar exceder cuotas de Gemini
         const responseData = { analysis: aiReport };
-        setCache(cacheKey, responseData);
+        setAiCached(cacheKey, responseData);
 
         res.json(responseData);
     } catch (error) {
@@ -1859,10 +1937,9 @@ Métricas reales de Miguel de hoy:
 Responde a las dudas de Miguel asesorándolo sobre su entrenamiento. Relaciona siempre su HRV, TSB y nivel de sueño en tu respuesta para respaldarla científicamente. 
 Mantén tu respuesta corta y estructurada en un máximo de 2-3 párrafos breves. Usa viñetas para que sea súper legible en dispositivos móviles.`;
 
-        // Llamar a Gemini API si existe la clave API
+        // Llamar a Gemini API de manera resiliente si existe la clave API
         if (process.env.GEMINI_API_KEY) {
-            console.log("[AI-Coach] Querying Google Gemini API...");
-            const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+            console.log("[AI-Coach] Querying Google Gemini API (Resilient mode)...");
             try {
                 const contents = [];
                 if (chatHistory && Array.isArray(chatHistory)) {
@@ -1878,21 +1955,10 @@ Mantén tu respuesta corta y estructurada en un máximo de 2-3 párrafos breves.
                     parts: [{ text: `${systemPrompt}\n\nPregunta de Miguel: ${message}` }]
                 });
 
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/` + geminiModel + `:generateContent?key=${process.env.GEMINI_API_KEY}`,
-                    { contents },
-                    { headers: { 'Content-Type': 'application/json' } }
-                );
-
-                if (response.data && response.data.candidates && response.data.candidates[0].content) {
-                    const text = response.data.candidates[0].content.parts[0].text;
-                    return res.json({ reply: text, mock: false });
-                }
+                const result = await callGeminiWithFallback(contents);
+                return res.json({ reply: result.text, mock: false, model: result.model });
             } catch (err) {
-                console.error("[AI-Coach] Gemini API error, falling back to offline coach:", err.message);
-                if (err.response && err.response.data) {
-                    console.error("[AI-Coach] Gemini API detailed error:", JSON.stringify(err.response.data, null, 2));
-                }
+                console.error("[AI-Coach] Resilient Gemini calls failed for coach drawer:", err.message);
             }
         }
 
@@ -1930,7 +1996,7 @@ Hoy debes dar prioridad absoluta a la recuperación:
 Como tu preparador físico virtual, te recomiendo:
 * **Entrenamiento**: Mantente constante con metas cómodas. Si tu preparación es mayor de 70, puedes meter intensidad; de lo contrario, céntrate en la base.
 * **Descanso**: Prioriza dormir entre 7.5 y 8.5 horas para restaurar tu pasillo biométrico de HRV.`;
-            localReply += (process.env.GEMINI_API_KEY ? '*Nota: Se ha detectado tu GEMINI_API_KEY en el servidor, pero la llamada a la API de Gemini ha fallado. Revisa los logs del servidor para ver el error.*' : '*Nota: Añade tu GEMINI_API_KEY en el servidor para activar las respuestas dinámicas completas de IA.*');
+            localReply += (process.env.GEMINI_API_KEY ? '\n\n> *Nota del Coach:* Usando el motor de diagnóstico local debido a una desconexión o saturación temporal en la API de Gemini.' : '\n\n> *Nota:* Añade tu `GEMINI_API_KEY` en el archivo `.env` para recibir respuestas 100% dinámicas.');
         }
 
         res.json({ reply: localReply, mock: true });
@@ -1942,6 +2008,24 @@ Como tu preparador físico virtual, te recomiendo:
 
 app.get('/api/ai/weekly-report', async (req, res) => {
     try {
+        const force = req.query.force === 'true';
+        const now = new Date();
+        const day = now.getDay();
+        const diff = (day === 0 ? 6 : day - 1);
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - diff);
+        const mondayStr = monday.toISOString().split('T')[0];
+        const cacheKey = `weekly_report_${mondayStr}`;
+
+        // 0. Comprobar caché persistente si no se fuerza la recarga
+        if (!force) {
+            const cachedReport = getAiCached(cacheKey);
+            if (cachedReport) {
+                console.log(`[cache hit] weekly-report (persistent) for week starting ${mondayStr}`);
+                return res.json(cachedReport);
+            }
+        }
+
         const token = await getValidAccessToken();
         const year = new Date().getFullYear();
         const afterTimestamp = Math.floor(new Date(`${year}-01-01T00:00:00Z`).getTime() / 1000);
@@ -1972,7 +2056,7 @@ app.get('/api/ai/weekly-report', async (req, res) => {
         const tsb = Math.round(ctl - atl);
 
         let reportMarkdown = `### 📊 Diagnóstico Fisiológico Semanal
-*Preparado por tu Asistente Deportivo IA*
+*Preparado por tu Asistente Deportivo IA (Análisis Fisiológico Local)*
 
 #### 1. Estado Autonómico & HRV (Homeostasis)
 * Tu pulso en reposo promedio se sitúa estable en los rangos basales de **55 ppm**.
@@ -1986,13 +2070,11 @@ app.get('/api/ai/weekly-report', async (req, res) => {
 * **Días de Intensidad (Series)**: Ideal programar trabajos de umbral los días con mayor calidad de sueño.
 * **Recuperación**: Mantener al menos 1 día de descanso completo o regenerativo para restablecer tus reservas de glucógeno y disipar la fatiga del sistema nervioso simpático.
 
-> *Tip del Coach:* `;
-        reportMarkdown += (process.env.GEMINI_API_KEY ? 'Se ha detectado tu `GEMINI_API_KEY` en el servidor, pero la llamada a la API de Gemini ha fallado. Revisa los logs del servidor para ver el error.' : 'Recuerda añadir tu `GEMINI_API_KEY` en el archivo de configuración para recibir un diagnóstico semanal 100% dinámico y personalizado con recomendaciones moleculares completas de tu IA.');
+\n\n> *Nota del Coach:* Usando el motor de diagnóstico local debido a una desconexión o saturación temporal en la API de Gemini.`;
 
         // Si hay clave Gemini, generamos uno completamente dinámico
         if (process.env.GEMINI_API_KEY) {
-            console.log("[AI-Report] Generating dynamic weekly sports report with Gemini...");
-            const geminiModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash-latest';
+            console.log("[AI-Report] Generating dynamic weekly sports report with Gemini (Resilient mode)...");
             try {
                 const systemPrompt = `Eres un científico deportivo de élite. Escribe un reporte diagnóstico de entrenamiento deportivo personalizado para Miguel basándote en estos datos de sus últimos 28 días:
 - Volumen de 28 días: ${kmTotal} km, ${hoursTotal} horas.
@@ -2006,24 +2088,16 @@ Escribe un reporte de 3 secciones cortas en formato Markdown:
 
 Usa viñetas, mantén el tono profesional pero motivador, e imprímele rigor científico.`;
 
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/` + geminiModel + `:generateContent?key=${process.env.GEMINI_API_KEY}`,
-                    { contents: [{ role: 'user', parts: [{ text: systemPrompt }] }] },
-                    { headers: { 'Content-Type': 'application/json' } }
-                );
-
-                if (response.data && response.data.candidates && response.data.candidates[0].content) {
-                    reportMarkdown = response.data.candidates[0].content.parts[0].text;
-                }
+                const result = await callGeminiWithFallback(systemPrompt);
+                reportMarkdown = result.text;
             } catch (err) {
-                console.error("[AI-Report] Gemini API failed, using structured fallback report:", err.message);
-                if (err.response && err.response.data) {
-                    console.error("[AI-Report] Gemini API detailed error:", JSON.stringify(err.response.data, null, 2));
-                }
+                console.error("[AI-Report] Resilient Gemini calls failed for weekly report:", err.message);
             }
         }
 
-        res.json({ report: reportMarkdown });
+        const responseData = { report: reportMarkdown };
+        setAiCached(cacheKey, responseData);
+        res.json(responseData);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error generando reporte deportivo IA' });
