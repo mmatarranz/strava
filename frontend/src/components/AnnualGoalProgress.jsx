@@ -177,21 +177,6 @@ const AnnualGoalProgress = ({ data }) => {
           monthsRemaining={monthsRemaining}
           color="var(--health-green)"
         />
-        <GoalCard
-          title="Desnivel Total"
-          emoji="🏔️"
-          total={totals.totalElevation}
-          goal={goals.cyclingElevation + goals.runningElevation}
-          val1={totals.cyclingElevation}
-          val2={totals.runningElevation}
-          label1="Bici"
-          label2="Running"
-          projected={projected.cyclingElevation + projected.runningElevation}
-          kmNeeded={kmNeeded.cyclingElevation + kmNeeded.runningElevation}
-          monthsRemaining={monthsRemaining}
-          color="var(--health-cyan)"
-          unit="m"
-        />
       </div>
 
       {/* Gráfico mensual de km */}

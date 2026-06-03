@@ -16,6 +16,8 @@ const AI_CACHE_FILE        = path.join(__dirname, 'ai_cache.json');
 const APPLE_HEALTH_FILE    = path.join(__dirname, 'apple_health.json');
 const ACTIVITIES_FILE      = path.join(__dirname, 'activities.json');
 const GOALS_FILE           = path.join(__dirname, 'goals.json');
+const STRAVA_API_BASE      = 'https://www.strava.com/api/v3'; // Nota: Cambiar a 'https://www.api-v3.strava.com' antes del 1 de junio de 2027
+
 
 // ---------------------------
 // CONSTANTES GLOBALES DE RENDIMIENTO (PMC)
@@ -33,6 +35,30 @@ const secondsToHhMmSs = (seconds) => {
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+const getDailyWithingsActivities = (activities) => {
+    if (!activities || !Array.isArray(activities)) return [];
+    const grouped = {};
+    for (const act of activities) {
+        const date = act.date;
+        if (!grouped[date]) {
+            grouped[date] = [];
+        }
+        grouped[date].push(act);
+    }
+    const dailyList = [];
+    for (const date of Object.keys(grouped)) {
+        const group = grouped[date];
+        group.sort((a, b) => {
+            const aIsTracker = a.is_tracker === true || a.is_tracker === 1 || !!a.is_tracker;
+            const bIsTracker = b.is_tracker === true || b.is_tracker === 1 || !!b.is_tracker;
+            if (aIsTracker && !bIsTracker) return -1;
+            if (!aIsTracker && bIsTracker) return 1;
+            return (b.steps || 0) - (a.steps || 0);
+        });
+        dailyList.push(group[0]);
+    }
+    return dailyList;
 };
 const formatPace = (speedMs) => {
     if (!speedMs || speedMs === 0) return '0:00';
@@ -590,7 +616,7 @@ async function syncActivities(token, forceFull = false) {
     for (let i = 1; i <= maxPages; i++) {
         try {
             console.log(`[Sync] Solicitando página ${i} de actividades a Strava...`);
-            const r    = await axios.get(`https://www.strava.com/api/v3/athlete/activities?per_page=50&page=${i}`, {
+            const r    = await axios.get(`${STRAVA_API_BASE}/athlete/activities?per_page=50&page=${i}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const data = r.data || [];
@@ -663,7 +689,7 @@ async function fetchRecentActivities(token, afterTimestamp) {
     const cached          = getCached(cacheKey);
     if (cached) { console.log(`[cache hit] ${cacheKey}`); return cached; }
     try {
-        const r    = await axios.get(`https://www.strava.com/api/v3/athlete/activities?per_page=50&after=${afterTimestamp}`, {
+        const r    = await axios.get(`${STRAVA_API_BASE}/athlete/activities?per_page=50&after=${afterTimestamp}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         const data = r.data || [];
@@ -730,7 +756,7 @@ function computePMC(loadByDay, daysBack = 180) {
 app.get('/api/debug/types', async (req, res) => {
     try {
         const token    = await getValidAccessToken();
-        const r        = await axios.get('https://www.strava.com/api/v3/athlete/activities?per_page=100', {
+        const r        = await axios.get(`${STRAVA_API_BASE}/athlete/activities?per_page=100`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         const summary  = r.data.map(a => ({
@@ -782,7 +808,7 @@ app.post('/api/activities/:id/ai-analyze', async (req, res) => {
         const token = await getValidAccessToken();
         let act = null;
         try {
-            const stravaRes = await axios.get(`https://www.strava.com/api/v3/activities/${id}`, {
+            const stravaRes = await axios.get(`${STRAVA_API_BASE}/activities/${id}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             act = stravaRes.data;
@@ -1199,7 +1225,8 @@ app.get('/api/health', async (req, res) => {
                 const sevenDaysAgo      = new Date(); sevenDaysAgo.setDate(today.getDate() - 7);
                 const startdateymd      = sevenDaysAgo.toISOString().split('T')[0];
                 const enddateymd        = today.toISOString().split('T')[0];
-                const actsWithings      = await getCachedWithingsActivity(withingsToken, startdateymd, enddateymd);
+                const rawActsWithings   = await getCachedWithingsActivity(withingsToken, startdateymd, enddateymd);
+                const actsWithings      = getDailyWithingsActivities(rawActsWithings);
                 if (actsWithings && actsWithings.length > 0) {
                     actsWithings.sort((a, b) => a.date.localeCompare(b.date));
                     const todayStr  = today.toISOString().split('T')[0];
@@ -1288,11 +1315,12 @@ app.get('/api/fitness', async (req, res) => {
                 const enddate             = Math.floor(today.getTime() / 1000);
 
                 console.log('[Withings-PMC] Fetching 180 days of sleep, activity and weight...');
-                const [sleepSeries, actsWithings, measureGrps] = await Promise.all([
+                const [sleepSeries, rawActsWithings, measureGrps] = await Promise.all([
                     getCachedWithingsSleep(withingsToken, startdateymd, enddateymd),
                     getCachedWithingsActivity(withingsToken, startdateymd, enddateymd),
                     getCachedWithingsMeasures(withingsToken, startdate, enddate)
                 ]);
+                const actsWithings = getDailyWithingsActivities(rawActsWithings);
 
                 const allRhrs = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
                 if (allRhrs.length > 0) averageRhr = Math.round(allRhrs.reduce((a, b) => a + b, 0) / allRhrs.length);
@@ -1492,15 +1520,31 @@ app.get('/api/recovery', async (req, res) => {
 
         const hrActs = acts.filter(a => a.has_heartrate && a.average_heartrate);
         const zones  = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+        const efficiencyHistory = [];
         for (const a of hrActs) {
             const pct = a.average_heartrate;
             const dur = a.moving_time / 60;
             if      (pct < 114) zones.z1 += dur;
-            else if (pct < 152) zones.z2 += dur;
-            else if (pct < 171) zones.z3 += dur;
-            else if (pct < 190) zones.z4 += dur;
+            else if (pct < 126) zones.z2 += dur;
+            else if (pct < 137) zones.z3 += dur;
+            else if (pct < 151) zones.z4 += dur;
             else                zones.z5 += dur;
+
+            if (a.average_speed) {
+                const label = resolveTypeForMap(a);
+                if (label === 'Running' || label === 'Ciclismo' || label === 'Ciclo Indoor' || label === 'Andar') {
+                    const ef = parseFloat(((a.average_speed * 60) / pct).toFixed(3));
+                    efficiencyHistory.push({
+                        date: new Date(a.start_date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+                        rawDate: a.start_date,
+                        name: a.name,
+                        type: label,
+                        ef
+                    });
+                }
+            }
         }
+        efficiencyHistory.sort((a, b) => a.rawDate.localeCompare(b.rawDate));
         const totalZoneMin = Object.values(zones).reduce((s, v) => s + v, 0) || 1;
         const zonePcts     = Object.fromEntries(
             Object.entries(zones).map(([k, v]) => [k, parseFloat(((v/totalZoneMin)*100).toFixed(1))])
@@ -1564,10 +1608,11 @@ app.get('/api/recovery', async (req, res) => {
                 const enddateymd      = today.toISOString().split('T')[0];
 
                 console.log('[Withings] Fetching 28 days of sleep and activity summaries...');
-                const [sleepSeries, actsWithings] = await Promise.all([
+                const [sleepSeries, rawActsWithings] = await Promise.all([
                     getCachedWithingsSleep(withingsToken, startdateymd, enddateymd),
                     getCachedWithingsActivity(withingsToken, startdateymd, enddateymd)
                 ]);
+                const actsWithings = getDailyWithingsActivities(rawActsWithings);
 
                 if (sleepSeries.length > 0) {
                     sleepHistory28 = sleepSeries.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
@@ -1727,7 +1772,8 @@ app.get('/api/recovery', async (req, res) => {
             sleepData, rhrData, hrvData, readinessScore, recoveryScore: readinessScore,
             strainScore: strainHistory[6].strain, strainHistory, withingsConnected,
             appleHealthConnected,
-            acwr: acwrToday
+            acwr: acwrToday,
+            efficiencyHistory
         });
     } catch (error) {
         if (error.message === 'NO_TOKEN' || error.message === 'TOKEN_REFRESH_FAILED') {

@@ -259,7 +259,7 @@ const TrainingReadiness = ({ data }) => {
                 />
                 
                 {/* Biometric corridor limits */}
-                <Area type="monotone" dataKey="corridor" stroke="none" fill="url(#corridorColor)" name="Pasillo Biométrico" />
+                <Area type="monotone" dataKey="max" baseValue="min" stroke="none" fill="url(#corridorColor)" name="Pasillo Biométrico" />
                 <Line dataKey="max" stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="3 3" dot={false} activeDot={false} name="Límite Superior" />
                 <Line dataKey="min" stroke="rgba(255,255,255,0.12)" strokeWidth={1} strokeDasharray="3 3" dot={false} activeDot={false} name="Límite Inferior" />
                 

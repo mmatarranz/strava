@@ -4,12 +4,12 @@ const ZONE_COLORS = {
   z1: '#06b6d4', z2: '#10b981', z3: '#f59e0b', z4: '#FC4C02', z5: '#ef4444'
 };
 const ZONE_LABELS = {
-  z1: 'Z1 Recuperación', z2: 'Z2 Aeróbico', z3: 'Z3 Umbral',
-  z4: 'Z4 Anaeróbico', z5: 'Z5 Máxima'
+  z1: 'Z1 Recuperación', z2: 'Z2 Resistencia', z3: 'Z3 Ritmo',
+  z4: 'Z4 Umbral', z5: 'Z5 Anaeróbico'
 };
 const ZONE_DESC = {
-  z1: '< 114 bpm', z2: '114–152 bpm', z3: '152–171 bpm',
-  z4: '171–190 bpm', z5: '> 190 bpm'
+  z1: '< 114 bpm', z2: '115–125 bpm', z3: '126–136 bpm',
+  z4: '137–150 bpm', z5: '> 151 bpm'
 };
 
 const RecoveryPanel = ({ data }) => {
