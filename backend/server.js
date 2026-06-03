@@ -789,6 +789,31 @@ function computePMC(loadByDay, daysBack = 180) {
 }
 
 // ---------------------------
+// ENDPOINT: DEBUG — Withings API Raw Data
+// ---------------------------
+app.get('/api/debug/withings', async (req, res) => {
+    try {
+        const token = await getWithingsValidAccessToken();
+        const today = new Date();
+        const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(today.getDate() - 7);
+        const startdateymd = sevenDaysAgo.toISOString().split('T')[0];
+        const enddateymd = today.toISOString().split('T')[0];
+
+        const rawActs = await fetchWithingsActivity(token, startdateymd, enddateymd);
+        const consolidated = getDailyWithingsActivities(rawActs);
+        
+        res.json({
+            status: 'success',
+            dateRange: { start: startdateymd, end: enddateymd },
+            rawActivities: rawActs,
+            consolidatedActivities: consolidated
+        });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// ---------------------------
 // ENDPOINT: DEBUG — Tipos de actividad
 // ---------------------------
 app.get('/api/debug/types', async (req, res) => {
