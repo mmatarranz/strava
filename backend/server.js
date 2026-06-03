@@ -714,11 +714,24 @@ function buildLoadByDay(activities, weightMap = {}) {
     for (const act of activities) {
         if (isPassiveRecoveryActivity(act)) continue;
         const dateStr = new Date(act.start_date).toISOString().split('T')[0];
+        
         let load = act.suffer_score || 0;
-        if (!load && act.moving_time) {
+        
+        // Detección de fallos en el sensor de pulso (Glitch)
+        // Si es carrera o ciclismo y el pulso medio registrado es anormalmente bajo (< 100 ppm)
+        // pero la actividad tiene una duración relevante (> 10 mins) y tiene suffer_score bajo.
+        const actLabel = resolveTypeForMap(act);
+        const isCardio = actLabel === 'Running' || actLabel === 'Ciclismo' || actLabel === 'Ciclo Indoor';
+        const hasGlitchedHeartRate = act.has_heartrate && act.average_heartrate > 0 && act.average_heartrate < 100;
+        
+        if (isCardio && hasGlitchedHeartRate && act.moving_time > 600) {
+            // Ignoramos el suffer_score erróneo y estimamos la carga en base a duración
+            load = Math.round((act.moving_time / 60) * 0.7 * 0.5);
+        } else if (!load && act.moving_time) {
             const hrFactor = act.has_heartrate ? act.average_heartrate / 150 : 0.7;
             load = Math.round((act.moving_time / 60) * hrFactor * 0.5);
         }
+        
         // Ajuste por peso corporal real (Withings) para actividades peso-sensitivas
         if (Object.keys(weightMap).length > 0) {
             const isWeightSensitive = ['Run','Walk','Ride','VirtualRide'].includes(act.type);
@@ -1661,7 +1674,7 @@ app.get('/api/recovery', async (req, res) => {
 
         // TSB para el día de hoy (pase único con computePMC)
         const loadByDay = buildLoadByDay(allYearActs);
-        const pmcFull   = computePMC(loadByDay, 28 + 42);  // 70 días: 42 de warmup + 28 de histórico
+        const pmcFull   = computePMC(loadByDay, 180);  // 180 días de warmup para total consistencia
         const todayPmc  = pmcFull[pmcFull.length - 1];
         const currentTsb = todayPmc.tsb;
 
@@ -1850,7 +1863,7 @@ app.post('/api/ai/coach', async (req, res) => {
 
         // TSB usando computePMC (reutilizado, no duplicado)
         const loadByDay  = buildLoadByDay(allYearActs);
-        const pmcResult  = computePMC(loadByDay, 43);
+        const pmcResult  = computePMC(loadByDay, 180); // 180 días de warmup
         const todayPmc   = pmcResult[pmcResult.length - 1];
         const ctl        = Math.round(todayPmc.ctl);
         const atl        = Math.round(todayPmc.atl);
@@ -1931,7 +1944,7 @@ app.get('/api/ai/weekly-report', async (req, res) => {
 
         // TSB usando computePMC (reutilizado)
         const loadByDay = buildLoadByDay(allYearActs);
-        const pmcResult = computePMC(loadByDay, 29);
+        const pmcResult = computePMC(loadByDay, 180); // 180 días de warmup
         const todayPmc  = pmcResult[pmcResult.length - 1];
         const tsb       = Math.round(todayPmc.tsb);
 
