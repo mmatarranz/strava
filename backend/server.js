@@ -49,14 +49,23 @@ const getDailyWithingsActivities = (activities) => {
     const dailyList = [];
     for (const date of Object.keys(grouped)) {
         const group = grouped[date];
-        group.sort((a, b) => {
-            const aIsTracker = a.is_tracker === true || a.is_tracker === 1 || !!a.is_tracker;
-            const bIsTracker = b.is_tracker === true || b.is_tracker === 1 || !!b.is_tracker;
-            if (aIsTracker && !bIsTracker) return -1;
-            if (!aIsTracker && bIsTracker) return 1;
-            return (b.steps || 0) - (a.steps || 0);
+        let totalSteps = 0;
+        let totalCalories = 0;
+        let totalActive = 0;
+        
+        for (const act of group) {
+            totalSteps += act.steps || 0;
+            totalCalories += act.calories || 0;
+            totalActive += act.active || 0;
+        }
+        
+        dailyList.push({
+            date,
+            steps: totalSteps,
+            calories: totalCalories,
+            active: totalActive,
+            is_tracker: true
         });
-        dailyList.push(group[0]);
     }
     return dailyList;
 };
