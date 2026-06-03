@@ -120,6 +120,8 @@ function App() {
       setActivities(Array.isArray(freshActs) ? freshActs : []);
       const freshStats = await apiFetch('/stats');
       setStats(freshStats);
+      const freshHealth = await apiFetch('/health?force=true');
+      setHealthData(freshHealth);
     } catch (e) {
       console.error(e);
       setErrorMsg('Error realizando sincronización completa de histórico: ' + e.message);

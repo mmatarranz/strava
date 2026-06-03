@@ -221,7 +221,7 @@ async function getWithingsValidAccessToken() {
 // Evita peticiones duplicadas cuando /api/fitness y /api/recovery se llaman casi simultáneamente
 // ---------------------------
 const WITHINGS_CACHE     = new Map();
-const WITHINGS_CACHE_TTL = 30 * 60 * 1000; // 30 min
+const WITHINGS_CACHE_TTL = 5 * 60 * 1000;  // 5 min (más dinámico para actualizaciones de pasos)
 
 async function getCachedWithingsSleep(token, startdateymd, enddateymd) {
     const key = `sleep_${startdateymd}_${enddateymd}`;
@@ -1130,6 +1130,11 @@ app.post('/api/health/apple', (req, res) => {
 // ENDPOINT: SALUD (Withings)
 // ---------------------------
 app.get('/api/health', async (req, res) => {
+    const force = req.query.force === 'true';
+    if (force) {
+        console.log('[Withings] Forzando refresco de la caché por petición del usuario...');
+        WITHINGS_CACHE.clear();
+    }
     const defaultHydration = { dailyGoal: 3.0, currentLiters: 2.2, previousLiters: 1.8, history: [2.0, 2.5, 1.8, 3.1, 2.2] };
 
     let appleData = {};
