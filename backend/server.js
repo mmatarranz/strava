@@ -717,19 +717,35 @@ function buildLoadByDay(activities, weightMap = {}) {
         
         let load = act.suffer_score || 0;
         
-        // Detección de fallos en el sensor de pulso (Glitch)
-        // Si es carrera o ciclismo y el pulso medio registrado es anormalmente bajo (< 100 ppm)
-        // pero la actividad tiene una duración relevante (> 10 mins) y tiene suffer_score bajo.
+        // 1. Reescribir actividades de spinning anteriores al 1 de junio de 2026 (referencia: 43 ptos / 58.8 mins = 0.73129/min)
         const actLabel = resolveTypeForMap(act);
-        const isCardio = actLabel === 'Running' || actLabel === 'Ciclismo' || actLabel === 'Ciclo Indoor';
-        const hasGlitchedHeartRate = act.has_heartrate && act.average_heartrate > 0 && act.average_heartrate < 100;
+        const nameLower = (act.name || '').toLowerCase();
+        const isCycling = actLabel === 'Ciclo Indoor' || actLabel === 'Ciclismo';
+        const isIndoor = act.trainer === true || 
+                         nameLower.includes('indoor') || 
+                         nameLower.includes('cibeles') || 
+                         nameLower.includes('spinning') || 
+                         nameLower.includes('spin');
+        const isSpinning = isCycling && isIndoor;
+        const isHistoricalSpinning = isSpinning && new Date(act.start_date) < new Date('2026-06-01T00:00:00Z');
         
-        if (isCardio && hasGlitchedHeartRate && act.moving_time > 600) {
-            // Ignoramos el suffer_score erróneo y estimamos la carga en base a duración
-            load = Math.round((act.moving_time / 60) * 0.7 * 0.5);
-        } else if (!load && act.moving_time) {
-            const hrFactor = act.has_heartrate ? act.average_heartrate / 150 : 0.7;
-            load = Math.round((act.moving_time / 60) * hrFactor * 0.5);
+        if (isHistoricalSpinning) {
+            const durationMins = act.moving_time / 60;
+            load = Math.round(durationMins * (43 / 58.8));
+        } else {
+            // Detección de fallos en el sensor de pulso (Glitch)
+            // Si es carrera o ciclismo y el pulso medio registrado es anormalmente bajo (< 100 ppm)
+            // pero la actividad tiene una duración relevante (> 10 mins) y tiene suffer_score bajo.
+            const isCardio = actLabel === 'Running' || actLabel === 'Ciclismo' || actLabel === 'Ciclo Indoor';
+            const hasGlitchedHeartRate = act.has_heartrate && act.average_heartrate > 0 && act.average_heartrate < 100;
+            
+            if (isCardio && hasGlitchedHeartRate && act.moving_time > 600) {
+                // Ignoramos el suffer_score erróneo y estimamos la carga en base a duración
+                load = Math.round((act.moving_time / 60) * 0.7 * 0.5);
+            } else if (!load && act.moving_time) {
+                const hrFactor = act.has_heartrate ? act.average_heartrate / 150 : 0.7;
+                load = Math.round((act.moving_time / 60) * hrFactor * 0.5);
+            }
         }
         
         // Ajuste por peso corporal real (Withings) para actividades peso-sensitivas
