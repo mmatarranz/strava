@@ -1856,6 +1856,83 @@ app.get('/api/recovery', async (req, res) => {
 // ---------------------------
 // MÓDULO 7: COPILOTO DEPORTIVO IA (GEMINI)
 // ---------------------------
+async function getAiHealthContext(token, allYearActs) {
+    let athleteName = 'Atleta';
+    try {
+        const athleteRes = await axios.get(`${STRAVA_API_BASE}/athlete`, { headers: { Authorization: `Bearer ${token}` } });
+        if (athleteRes.data && athleteRes.data.firstname) athleteName = athleteRes.data.firstname;
+    } catch (e) {
+        console.error('Error fetching athlete name for AI:', e.message);
+    }
+
+    const since28Ms      = Date.now() - 28 * 86400000;
+    const acts28         = allYearActs.filter(a => new Date(a.start_date).getTime() > since28Ms);
+    const activeDaysCount = new Set(acts28.map(a => new Date(a.start_date).toISOString().split('T')[0])).size;
+    const kmTotal        = parseFloat((acts28.reduce((s, a) => s + a.distance, 0) / 1000).toFixed(1));
+    const hoursTotal     = parseFloat((acts28.reduce((s, a) => s + a.moving_time, 0) / 3600).toFixed(1));
+
+    let currentSleep = 75, sleepAvg = 7.3, currentRhr = 55, rhrAvg = 55, currentHrv = 60, hrvAvg = 58;
+    let sleepHistory28 = [7.5, 6.8, 8.2, 7.0, 6.5, 7.8, 7.2, 7.4, 6.9, 8.0, 7.1, 6.4, 7.9, 7.3, 7.6, 6.7, 8.1, 7.2, 6.6, 7.8, 7.4, 7.5, 6.8, 8.3, 7.1, 6.5, 7.9, 7.2];
+    let rhrHistory28   = [56, 54, 57, 55, 54, 56, 55, 54, 53, 56, 55, 57, 54, 55, 56, 54, 58, 55, 53, 56, 54, 55, 53, 57, 54, 53, 56, 54];
+    let sleepScores28  = [78, 65, 85, 72, 60, 82, 75, 76, 68, 84, 70, 58, 80, 74, 77, 64, 83, 73, 62, 79, 76, 78, 66, 86, 71, 61, 81, 73];
+
+    let appleData = {};
+    try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
+    const appleHealthConnected = Object.keys(appleData).length > 0;
+
+    if (appleHealthConnected) {
+        console.log('[AI-Context] Alimentando IA con datos de Apple Health...');
+        const filled28 = getFilledAppleHistory(28);
+        sleepScores28  = filled28.map(h => h.sleepScore);
+        rhrHistory28   = filled28.map(h => h.restingHeartRate);
+        sleepHistory28 = filled28.map(h => h.sleepDurationHours);
+    } else {
+        try {
+            const withingsToken   = await getWithingsValidAccessToken();
+            const today           = new Date();
+            const twentyEightAgo  = new Date(); twentyEightAgo.setDate(today.getDate() - 28);
+            const startdateymd    = twentyEightAgo.toISOString().split('T')[0];
+            const enddateymd      = today.toISOString().split('T')[0];
+            const sleepSeries     = await getCachedWithingsSleep(withingsToken, startdateymd, enddateymd);
+            if (sleepSeries.length > 0) {
+                sleepScores28  = sleepSeries.map(s => s.data.sleep_score || 75);
+                rhrHistory28   = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
+                sleepHistory28 = sleepSeries.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
+            }
+        } catch {
+            console.log('[AI-Context] Withings sleep summaries failed, utilizing default baselines.');
+        }
+    }
+
+    currentSleep = sleepScores28[0] || 78;
+    sleepAvg     = parseFloat((sleepHistory28.reduce((a, b) => a + b, 0) / sleepHistory28.length).toFixed(1)) || 7.3;
+    currentRhr   = rhrHistory28[0]  || 54;
+    rhrAvg       = Math.round(rhrHistory28.reduce((a, b) => a + b, 0) / rhrHistory28.length) || 55;
+
+    // HRV rMSSD — pase único
+    const computedHrvHist = rhrHistory28.map((rhr_day, i) => {
+        const sleep_day = sleepScores28[i] || 75;
+        return Math.round(Math.max(25, 58 + (rhrAvg - rhr_day) * 1.5 + (sleep_day - 75) * 0.25));
+    });
+    currentHrv = computedHrvHist[0] || 60;
+    hrvAvg     = Math.round(computedHrvHist.reduce((a, b) => a + b, 0) / computedHrvHist.length) || 58;
+
+    // TSB usando computePMC (reutilizado, no duplicado)
+    const loadByDay  = buildLoadByDay(allYearActs);
+    const pmcResult  = computePMC(loadByDay, 180); // 180 días de warmup
+    const todayPmc   = pmcResult[pmcResult.length - 1];
+    const ctl        = Math.round(todayPmc.ctl);
+    const atl        = Math.round(todayPmc.atl);
+    const tsb        = Math.round(todayPmc.tsb);
+
+    const hrvScoreWeight  = currentHrv >= hrvAvg ? 100 : Math.max(30, 100 - (hrvAvg - currentHrv) * 9);
+    const rhrScoreWeight  = currentRhr <= rhrAvg ? 100 : Math.max(35, 100 - (currentRhr - rhrAvg) * 8);
+    const tsbScoreWeight  = tsb >= 0 ? 100 : Math.max(35, 100 + tsb * 2.2);
+    const readiness       = Math.round((currentSleep * 0.35) + (hrvScoreWeight * 0.25) + (rhrScoreWeight * 0.15) + (tsbScoreWeight * 0.25));
+
+    return { athleteName, currentSleep, sleepAvg, currentRhr, rhrAvg, currentHrv, hrvAvg, activeDaysCount, kmTotal, hoursTotal, ctl, atl, tsb, readiness };
+}
+
 app.post('/api/ai/coach', async (req, res) => {
     try {
         const { message, chatHistory } = req.body;
@@ -1866,70 +1943,9 @@ app.post('/api/ai/coach', async (req, res) => {
         const afterTimestamp = Math.floor(new Date(`${year}-01-01T00:00:00Z`).getTime() / 1000);
         const allYearActs    = await fetchAllActivities(token, 8, afterTimestamp);
 
-        const since28Ms      = Date.now() - 28 * 86400000;
-        const acts28         = allYearActs.filter(a => new Date(a.start_date).getTime() > since28Ms);
-        const activeDaysCount = new Set(acts28.map(a => new Date(a.start_date).toISOString().split('T')[0])).size;
+        const { athleteName, currentSleep, currentRhr, rhrAvg, currentHrv, hrvAvg, activeDaysCount, ctl, atl, tsb, readiness } = await getAiHealthContext(token, allYearActs);
 
-        let currentSleep = 75, sleepAvg = 7.3, currentRhr = 55, rhrAvg = 55, currentHrv = 60, hrvAvg = 58;
-        let sleepHistory28 = [7.5, 6.8, 8.2, 7.0, 6.5, 7.8, 7.2, 7.4, 6.9, 8.0, 7.1, 6.4, 7.9, 7.3, 7.6, 6.7, 8.1, 7.2, 6.6, 7.8, 7.4, 7.5, 6.8, 8.3, 7.1, 6.5, 7.9, 7.2];
-        let rhrHistory28   = [56, 54, 57, 55, 54, 56, 55, 54, 53, 56, 55, 57, 54, 55, 56, 54, 58, 55, 53, 56, 54, 55, 53, 57, 54, 53, 56, 54];
-        let sleepScores28  = [78, 65, 85, 72, 60, 82, 75, 76, 68, 84, 70, 58, 80, 74, 77, 64, 83, 73, 62, 79, 76, 78, 66, 86, 71, 61, 81, 73];
-
-        let appleData = {};
-        try { appleData = JSON.parse(fs.readFileSync(APPLE_HEALTH_FILE, 'utf8')); } catch {}
-        const appleHealthConnected = Object.keys(appleData).length > 0;
-
-        if (appleHealthConnected) {
-            console.log('[AI-Coach] Alimentando IA con datos de Apple Health...');
-            const filled28 = getFilledAppleHistory(28);
-            sleepScores28  = filled28.map(h => h.sleepScore);
-            rhrHistory28   = filled28.map(h => h.restingHeartRate);
-            sleepHistory28 = filled28.map(h => h.sleepDurationHours);
-        } else {
-            try {
-                const withingsToken   = await getWithingsValidAccessToken();
-                const today           = new Date();
-                const twentyEightAgo  = new Date(); twentyEightAgo.setDate(today.getDate() - 28);
-                const startdateymd    = twentyEightAgo.toISOString().split('T')[0];
-                const enddateymd      = today.toISOString().split('T')[0];
-                const sleepSeries     = await getCachedWithingsSleep(withingsToken, startdateymd, enddateymd);
-                if (sleepSeries.length > 0) {
-                    sleepScores28  = sleepSeries.map(s => s.data.sleep_score || 75);
-                    rhrHistory28   = sleepSeries.map(s => s.data.hr_average).filter(hr => hr > 0);
-                    sleepHistory28 = sleepSeries.map(s => parseFloat((s.data.total_sleep_time / 3600).toFixed(1)));
-                }
-            } catch {
-                console.log('[AI-Context] Withings sleep summaries failed, utilizing default baselines.');
-            }
-        }
-
-        currentSleep = sleepScores28[0] || 78;
-        sleepAvg     = parseFloat((sleepHistory28.reduce((a, b) => a + b, 0) / sleepHistory28.length).toFixed(1)) || 7.3;
-        currentRhr   = rhrHistory28[0]  || 54;
-        rhrAvg       = Math.round(rhrHistory28.reduce((a, b) => a + b, 0) / rhrHistory28.length) || 55;
-
-        // HRV rMSSD — pase único
-        const computedHrvHist = rhrHistory28.map((rhr_day, i) => {
-            const sleep_day = sleepScores28[i] || 75;
-            return Math.round(Math.max(25, 58 + (rhrAvg - rhr_day) * 1.5 + (sleep_day - 75) * 0.25));
-        });
-        currentHrv = computedHrvHist[0] || 60;
-        hrvAvg     = Math.round(computedHrvHist.reduce((a, b) => a + b, 0) / computedHrvHist.length) || 58;
-
-        // TSB usando computePMC (reutilizado, no duplicado)
-        const loadByDay  = buildLoadByDay(allYearActs);
-        const pmcResult  = computePMC(loadByDay, 180); // 180 días de warmup
-        const todayPmc   = pmcResult[pmcResult.length - 1];
-        const ctl        = Math.round(todayPmc.ctl);
-        const atl        = Math.round(todayPmc.atl);
-        const tsb        = Math.round(todayPmc.tsb);
-
-        const hrvScoreWeight  = currentHrv >= hrvAvg ? 100 : Math.max(30, 100 - (hrvAvg - currentHrv) * 9);
-        const rhrScoreWeight  = currentRhr <= rhrAvg ? 100 : Math.max(35, 100 - (currentRhr - rhrAvg) * 8);
-        const tsbScoreWeight  = tsb >= 0 ? 100 : Math.max(35, 100 + tsb * 2.2);
-        const readiness       = Math.round((currentSleep * 0.35) + (hrvScoreWeight * 0.25) + (rhrScoreWeight * 0.15) + (tsbScoreWeight * 0.25));
-
-        const systemPrompt = `Eres un científico deportivo de élite y preparador físico experto (estilo Coach de WHOOP, Garmin Readiness Advisor e Intervals.icu). \nAnalizas los datos de rendimiento deportivo del atleta y respondes siempre de forma profesional, motivadora, rigurosa y concisa.\nEl atleta al que entrenas se llama Miguel.\n\nMétricas reales de Miguel de hoy:\n- CTL (Fitness crónico): ${ctl}\n- ATL (Fatiga aguda): ${atl}\n- TSB (Frescura/Estado Coggan): ${tsb} (Zonas: < -30 sobrecarga extrema, -30 a -10 óptimo/carga, -10 a 5 transición, >5 pico de forma)\n- FCR de hoy: ${currentRhr} ppm (media basal: ${rhrAvg} ppm)\n- HRV rMSSD de hoy: ${currentHrv} ms (media basal: ${hrvAvg} ms)\n- Sueño de anoche: ${currentSleep}/100\n- Predisposición (Garmin Training Readiness): ${readiness}/100\n- Días activos en últimas 4 semanas: ${activeDaysCount} días\n\nResponde a las dudas de Miguel asesorándolo sobre su entrenamiento. Relaciona siempre su HRV, TSB y nivel de sueño en tu respuesta para respaldarla científicamente. \nMantén tu respuesta corta y estructurada en un máximo de 2-3 párrafos breves. Usa viñetas para que sea súper legible en dispositivos móviles.`;
+        const systemPrompt = `Eres un científico deportivo de élite y preparador físico experto (estilo Coach de WHOOP, Garmin Readiness Advisor e Intervals.icu). \nAnalizas los datos de rendimiento deportivo del atleta y respondes siempre de forma profesional, motivadora, rigurosa y concisa.\nEl atleta al que entrenas se llama ${athleteName}.\n\nMétricas reales de ${athleteName} de hoy:\n- CTL (Fitness crónico): ${ctl}\n- ATL (Fatiga aguda): ${atl}\n- TSB (Frescura/Estado Coggan): ${tsb} (Zonas: < -30 sobrecarga extrema, -30 a -10 óptimo/carga, -10 a 5 transición, >5 pico de forma)\n- FCR de hoy: ${currentRhr} ppm (media basal: ${rhrAvg} ppm)\n- HRV rMSSD de hoy: ${currentHrv} ms (media basal: ${hrvAvg} ms)\n- Sueño de anoche: ${currentSleep}/100\n- Predisposición (Garmin Training Readiness): ${readiness}/100\n- Días activos en últimas 4 semanas: ${activeDaysCount} días\n\nResponde a las dudas de ${athleteName} asesorándolo sobre su entrenamiento. Relaciona siempre su HRV, TSB y nivel de sueño en tu respuesta para respaldarla científicamente. \nMantén tu respuesta corta y estructurada en un máximo de 2-3 párrafos breves. Usa viñetas para que sea súper legible en dispositivos móviles.`;
 
         if (process.env.GEMINI_API_KEY) {
             try {
@@ -1939,7 +1955,7 @@ app.post('/api/ai/coach', async (req, res) => {
                         contents.push({ role: ch.role === 'user' ? 'user' : 'model', parts: [{ text: ch.text }] });
                     });
                 }
-                contents.push({ role: 'user', parts: [{ text: `${systemPrompt}\n\nPregunta de Miguel: ${message}` }] });
+                contents.push({ role: 'user', parts: [{ text: `${systemPrompt}\n\nPregunta de ${athleteName}: ${message}` }] });
                 const result = await callGeminiWithFallback(contents);
                 return res.json({ reply: result.text, mock: false, model: result.model });
             } catch (err) {
@@ -1952,14 +1968,14 @@ app.post('/api/ai/coach', async (req, res) => {
         const m        = message.toLowerCase();
         if (m.includes('entrenar') || m.includes('hoy') || m.includes('hacer') || m.includes('series')) {
             if (readiness >= 75) {
-                localReply = `¡Hola Miguel! Analizando tus métricas de hoy, veo que tu **Predisposición (Readiness) es excelente (${readiness}/100)**. Tu HRV está en **${currentHrv} ms** (por encima de tu media de ${hrvAvg}ms), lo que indica que tu sistema parasimpático está listo para asimilar cargas elevadas. Tu FCR de **${currentRhr} ppm** es baja y estable. \n\nHoy es un día ideal para meter una sesión exigente:\n* Puedes meter tus **series a umbral (Z4)** o entrenamientos de intensidad.\n* Tu cuerpo asimilará perfectamente el estrés sin riesgo elevado de lesión.\n* ¡Aprovecha la ventana de supercompensación!`;
+                localReply = `¡Hola ${athleteName}! Analizando tus métricas de hoy, veo que tu **Predisposición (Readiness) es excelente (${readiness}/100)**. Tu HRV está en **${currentHrv} ms** (por encima de tu media de ${hrvAvg}ms), lo que indica que tu sistema parasimpático está listo para asimilar cargas elevadas. Tu FCR de **${currentRhr} ppm** es baja y estable. \n\nHoy es un día ideal para meter una sesión exigente:\n* Puedes meter tus **series a umbral (Z4)** o entrenamientos de intensidad.\n* Tu cuerpo asimilará perfectamente el estrés sin riesgo elevado de lesión.\n* ¡Aprovecha la ventana de supercompensación!`;
             } else if (readiness >= 45) {
-                localReply = `Hola Miguel. Tus métricas fisiológicas hoy muestran **fatiga acumulada moderada (Readiness: ${readiness}/100)**. Tu TSB marca **${tsb}** (zona de carga de entrenamiento) y tu sueño de anoche fue de **${currentSleep}/100**. Tu HRV está estable en **${currentHrv} ms**.\n\nPara hoy te sugiero modular la carga:\n* Evita entrenamientos de VO2 Máx o series extremas; tu cuerpo está reparando fibras musculares.\n* Te aconsejo realizar un **rodaje aeróbico cómodo (Zona 2 suave)** o entrenamiento regenerativo por debajo de 135 ppm.\n* Mantendrá tu flujo sanguíneo activo y facilitará que mañana estés en una zona más lista.`;
+                localReply = `Hola ${athleteName}. Tus métricas fisiológicas hoy muestran **fatiga acumulada moderada (Readiness: ${readiness}/100)**. Tu TSB marca **${tsb}** (zona de carga de entrenamiento) y tu sueño de anoche fue de **${currentSleep}/100**. Tu HRV está estable en **${currentHrv} ms**.\n\nPara hoy te sugiero modular la carga:\n* Evita entrenamientos de VO2 Máx o series extremas; tu cuerpo está reparando fibras musculares.\n* Te aconsejo realizar un **rodaje aeróbico cómodo (Zona 2 suave)** o entrenamiento regenerativo por debajo de 135 ppm.\n* Mantendrá tu flujo sanguíneo activo y facilitará que mañana estés en una zona más lista.`;
             } else {
-                localReply = `¡Hola Miguel! **Alarma de sobrecarga detectada (Readiness: ${readiness}/100)**. Tu sistema nervioso autónomo está fatigado (HRV bajo de **${currentHrv} ms** frente a tu basal de ${hrvAvg}ms), y tu pulso en reposo está elevado a **${currentRhr} ppm**. Además, tu sueño fue insuficiente (**${currentSleep}/100**).\n\nHoy debes dar prioridad absoluta a la recuperación:\n* **Descanso total** o únicamente una sesión de estiramientos muy suaves / yoga.\n* Salir a entrenar duro hoy deprimiría aún más tu HRV, aumentando drásticamente el riesgo de sobreentrenamiento o lesión.\n* ¡Recuerda que el descanso es la fase donde realmente te vuelves más fuerte!`;
+                localReply = `¡Hola ${athleteName}! **Alarma de sobrecarga detectada (Readiness: ${readiness}/100)**. Tu sistema nervioso autónomo está fatigado (HRV bajo de **${currentHrv} ms** frente a tu basal de ${hrvAvg}ms), y tu pulso en reposo está elevado a **${currentRhr} ppm**. Además, tu sueño fue insuficiente (**${currentSleep}/100**).\n\nHoy debes dar prioridad absoluta a la recuperación:\n* **Descanso total** o únicamente una sesión de estiramientos muy suaves / yoga.\n* Salir a entrenar duro hoy deprimiría aún más tu HRV, aumentando drásticamente el riesgo de sobreentrenamiento o lesión.\n* ¡Recuerda que el descanso es la fase donde realmente te vuelves más fuerte!`;
             }
         } else {
-            localReply = `¡Hola Miguel! Analizando tus datos, tu **Predisposición es de ${readiness}/100** con un HRV actual de **${currentHrv} ms** y un sueño de **${currentSleep}/100**. Tu forma atlética (TSB) actual es de **${tsb}**.\n\nComo tu preparador físico virtual, te recomiendo:\n* **Entrenamiento**: Mantente constante con metas cómodas. Si tu preparación es mayor de 70, puedes meter intensidad; de lo contrario, céntrate en la base.\n* **Descanso**: Prioriza dormir entre 7.5 y 8.5 horas para restaurar tu pasillo biométrico de HRV.`;
+            localReply = `¡Hola ${athleteName}! Analizando tus datos, tu **Predisposición es de ${readiness}/100** con un HRV actual de **${currentHrv} ms** y un sueño de **${currentSleep}/100**. Tu forma atlética (TSB) actual es de **${tsb}**.\n\nComo tu preparador físico virtual, te recomiendo:\n* **Entrenamiento**: Mantente constante con metas cómodas. Si tu preparación es mayor de 70, puedes meter intensidad; de lo contrario, céntrate en la base.\n* **Descanso**: Prioriza dormir entre 7.5 y 8.5 horas para restaurar tu pasillo biométrico de HRV.`;
             localReply += (process.env.GEMINI_API_KEY ? '\n\n> *Nota del Coach:* Usando el motor de diagnóstico local debido a una desconexión o saturación temporal en la API de Gemini.' : '\n\n> *Nota:* Añade tu `GEMINI_API_KEY` en el archivo `.env` para recibir respuestas 100% dinámicas.');
         }
         res.json({ reply: localReply, mock: true });
@@ -1992,23 +2008,14 @@ app.get('/api/ai/weekly-report', async (req, res) => {
         const afterTimestamp = Math.floor(new Date(`${year}-01-01T00:00:00Z`).getTime() / 1000);
         const allYearActs    = await fetchAllActivities(token, 8, afterTimestamp);
 
-        const since28Ms  = Date.now() - 28 * 86400000;
-        const acts28     = allYearActs.filter(a => new Date(a.start_date).getTime() > since28Ms);
-        const kmTotal    = parseFloat((acts28.reduce((s, a) => s + a.distance, 0) / 1000).toFixed(1));
-        const hoursTotal = parseFloat((acts28.reduce((s, a) => s + a.moving_time, 0) / 3600).toFixed(1));
+        const { athleteName, kmTotal, hoursTotal, ctl, atl, tsb, currentRhr, currentHrv, currentSleep } = await getAiHealthContext(token, allYearActs);
 
-        // TSB usando computePMC (reutilizado)
-        const loadByDay = buildLoadByDay(allYearActs);
-        const pmcResult = computePMC(loadByDay, 180); // 180 días de warmup
-        const todayPmc  = pmcResult[pmcResult.length - 1];
-        const tsb       = Math.round(todayPmc.tsb);
-
-        let reportMarkdown = `### 📊 Diagnóstico Fisiológico Semanal\n*Preparado por tu Asistente Deportivo IA (Análisis Fisiológico Local)*\n\n#### 1. Estado Autonómico & HRV (Homeostasis)\n* Tu pulso en reposo promedio se sitúa estable en los rangos basales de **55 ppm**.\n* Tu pasillo biométrico de **HRV rMSSD** muestra un excelente equilibrio parasimpático. Tu sistema de respuesta al estrés está completamente equilibrado, lo que te permite asimilar de manera óptima las sesiones fraccionadas.\n\n#### 2. Distribución de Carga & PMC\n* Tu fitness crónico (**CTL**) se encuentra consolidado, con una fatiga aguda (**ATL**) controlada.\n* Tu **TSB de ${tsb}** se posiciona en una zona productiva de carga. Estás sumando volumen de forma inteligente y progresiva sin disparar la tasa de rampa de lesión.\n\n#### 3. Prescripción de Entrenamiento\n* **Días de Intensidad (Series)**: Ideal programar trabajos de umbral los días con mayor calidad de sueño.\n* **Recuperación**: Mantener al menos 1 día de descanso completo o regenerativo para restablecer tus reservas de glucógeno y disipar la fatiga del sistema nervioso simpático.\n\n\n\n> *Nota del Coach:* Usando el motor de diagnóstico local debido a una desconexión o saturación temporal en la API de Gemini.`;
+        let reportMarkdown = `### 📊 Diagnóstico Fisiológico Semanal\n*Preparado por tu Asistente Deportivo IA (Análisis Fisiológico Local)*\n\n#### 1. Estado Autonómico & HRV (Homeostasis)\n* Tu pulso en reposo actual se sitúa en **${currentRhr} ppm**.\n* Tu **HRV rMSSD de ${currentHrv} ms** indica tu capacidad de asimilar las sesiones fraccionadas.\n\n#### 2. Distribución de Carga & PMC\n* Tu fitness crónico (**CTL**) se encuentra consolidado, con una fatiga aguda (**ATL**) controlada.\n* Tu **TSB de ${tsb}** se posiciona en una zona productiva de carga. Estás sumando volumen de forma inteligente.\n\n#### 3. Prescripción de Entrenamiento\n* **Calidad de Sueño**: Con una puntuación de sueño de ${currentSleep}/100, puedes programar trabajos de umbral acordes a tu recuperación.\n* **Recuperación**: Mantén días de descanso regenerativo para restablecer tus reservas de glucógeno.\n\n\n\n> *Nota del Coach:* Usando el motor de diagnóstico local debido a una desconexión o saturación temporal en la API de Gemini.`;
         let isSimulated = true;
 
         if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('tu_gemini_api_key')) {
             try {
-                const prompt = `Eres un científico deportivo de élite. Escribe un reporte diagnóstico de entrenamiento deportivo personalizado para Miguel basándote en estos datos de sus últimos 28 días:\n- Volumen de 28 días: ${kmTotal} km, ${hoursTotal} horas.\n- Forma física actual (PMC): CTL ${Math.round(todayPmc.ctl)}, ATL ${Math.round(todayPmc.atl)}, TSB ${tsb}.\n- Biometría: Pulso en reposo estable, HRV equilibrado.\n\nEscribe un reporte de 3 secciones cortas en formato Markdown:\n1. Análisis del Balance de Fatiga (TSB y PMC).\n2. Estado de Recuperación y Sueño.\n3. Recomendación estratégica para la semana que entra.\n\nUsa viñetas, mantén el tono profesional pero motivador, e imprímele rigor científico.`;
+                const prompt = `Eres un científico deportivo de élite. Escribe un reporte diagnóstico de entrenamiento deportivo personalizado para ${athleteName} basándote en estos datos de sus últimos 28 días:\n- Volumen de 28 días: ${kmTotal} km, ${hoursTotal} horas.\n- Forma física actual (PMC): CTL ${ctl}, ATL ${atl}, TSB ${tsb}.\n- Biometría: Pulso en reposo ${currentRhr} ppm, HRV ${currentHrv} ms, y calidad de sueño reciente de ${currentSleep}/100.\n\nEscribe un reporte de 3 secciones cortas en formato Markdown:\n1. Análisis del Balance de Fatiga (TSB y PMC).\n2. Estado de Recuperación y Sueño.\n3. Recomendación estratégica para la semana que entra.\n\nUsa viñetas, mantén el tono profesional pero motivador, e imprímele rigor científico.`;
                 const result  = await callGeminiWithFallback(prompt);
                 reportMarkdown = result.text;
                 isSimulated   = false;
